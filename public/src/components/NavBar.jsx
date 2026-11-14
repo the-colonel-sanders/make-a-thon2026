@@ -1,4 +1,5 @@
 import { formatTime } from '../lib/format.js'
+import logoUrl from '../assets/logo.png'
 
 // Outline-only icons (no fill); they take the link's text color.
 const ICONS = {
@@ -56,40 +57,7 @@ export function NavBar({ route, online, error, lastFetched, device, applianceId,
     <nav className="nav" aria-label="Main">
       <div className="nav__inner">
         <a className="nav__brand" href="#/">
-          <svg className="nav__logo" viewBox="0 0 24 32" aria-hidden="true">
-            <defs>
-              <linearGradient id="logo-meat" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0" stopColor="#f58a7a" />
-                <stop offset="1" stopColor="#c8161d" />
-              </linearGradient>
-              {/* Soft faded edge instead of a hard outline */}
-              <filter id="logo-glow" x="-30%" y="-30%" width="160%" height="160%">
-                <feDropShadow dx="0" dy="0" stdDeviation="0.9" floodColor="#000" floodOpacity="0.28" />
-              </filter>
-            </defs>
-            <g filter="url(#logo-glow)">
-              {/* Bone (thermometer stem) with knuckle at the top */}
-              <g fill="#f8f3ea">
-                <circle cx="9.6" cy="4" r="2.6" />
-                <circle cx="14.4" cy="4" r="2.6" />
-                <rect x="9.5" y="4" width="5" height="14" rx="2.5" />
-              </g>
-              {/* Drumstick meat (thermometer bulb) */}
-              <path
-                d="M12 14.5C8 15.5 4 19.5 4 24c0 4.4 3.6 7 8 7s8-2.6 8-7c0-4.5-4-8.5-8-9.5Z"
-                fill="url(#logo-meat)"
-              />
-            </g>
-            <path d="M7.2 21.5c.8-1.8 2.2-3.2 3.8-4" fill="none" stroke="#fff" strokeOpacity="0.45" strokeWidth="1.2" strokeLinecap="round" />
-            {/* Mercury column rising out of the meat */}
-            <rect x="11.1" y="8" width="1.8" height="9" rx="0.9" fill="#e0453a" />
-            {/* Scale ticks */}
-            <g stroke="#9a9a9a" strokeOpacity="0.7" strokeWidth="0.9" strokeLinecap="round">
-              <line x1="13.6" y1="9" x2="14.5" y2="9" />
-              <line x1="13.6" y1="11.5" x2="14.5" y2="11.5" />
-              <line x1="13.6" y1="14" x2="14.5" y2="14" />
-            </g>
-          </svg>
+          <img className="nav__logo" src={logoUrl} alt="" />
           Food Saver
         </a>
         <ul className="nav__links">

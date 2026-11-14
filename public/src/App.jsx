@@ -37,10 +37,10 @@ export default function App() {
   const profiles = useProfiles()
 
   const latest = backend.readings.at(-1)
-  const device = deviceState(latest, now) // 'on' | 'off' | 'unknown'
+  const device = deviceState(latest, now, backend.lastCheckinAt) // 'on' | 'off' | 'unknown'
   // While the device is off we don't know the real temperature, so the last
   // reading doesn't count as "in the danger zone right now".
-  const inZoneNow = device === 'on' && isInDangerZone(latest.temperature_c)
+  const inZoneNow = device === 'on' && latest != null && isInDangerZone(latest.temperature_c)
   const zoneMs = device === 'on' ? continuousZoneMs(backend.readings, now) : 0
   const itemNames = useMemo(
     () => foodItems.items.filter((it) => it.appliance_id === applianceId && !it.removed_at).map((it) => it.name),

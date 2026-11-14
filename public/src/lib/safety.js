@@ -9,11 +9,15 @@ export const isInDangerZone = (tempC) => tempC >= cfg().dangerMinC && tempC <= c
 
 /**
  * 'on' | 'off' | 'unknown' for the ESP32: off once no reading has arrived for
- * the device-offline timeout, unknown when there has never been a reading.
+ * the device-offline timeout. With no readings at all (e.g. right after the
+ * history was reset) a recent check-in still counts as on; otherwise unknown.
+ * Check-ins don't keep stale readings "current": if the sensor stops
+ * reporting, the device shows as off even while it is still checking in.
  */
-export function deviceState(latest, now) {
-  if (!latest) return 'unknown'
-  return now - latest.time > cfg().staleAfterMs ? 'off' : 'on'
+export function deviceState(latest, now, lastCheckinAt = null) {
+  const staleAfterMs = cfg().staleAfterMs
+  if (latest) return now - latest.time > staleAfterMs ? 'off' : 'on'
+  return lastCheckinAt != null && now - lastCheckinAt <= staleAfterMs ? 'on' : 'unknown'
 }
 
 /**

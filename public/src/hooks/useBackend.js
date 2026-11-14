@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchHealth, fetchReadings } from '../lib/api.js'
+import { fetchDevices, fetchHealth, fetchReadings } from '../lib/api.js'
 import { POLL_INTERVAL_MS, READINGS_LIMIT } from '../config.js'
 
 /**
- * Polls GET /health and GET /readings for one appliance.
+ * Polls GET /health, GET /readings and GET /devices for one appliance.
+ * `lastCheckinAt` is when the ESP32 last checked in (in this browser's clock),
+ * so the device counts as online even when it has no readings (e.g. right
+ * after the history was reset).
  * Keeps the last good readings when a poll fails, so the page doesn't blank out.
  */
 export function useBackend(applianceId) {
@@ -13,6 +16,7 @@ export function useBackend(applianceId) {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
   const [lastFetched, setLastFetched] = useState(null)
+  const [lastCheckinAt, setLastCheckinAt] = useState(null)
   const controllerRef = useRef(null)
 
   const poll = useCallback(async () => {
@@ -31,6 +35,16 @@ export function useBackend(applianceId) {
       setApplianceIds([...new Set(all.map((r) => r.appliance_id))].sort((a, b) => a - b))
       setError(null)
       setLastFetched(Date.now())
+      // Check-ins are optional (older API): failures don't affect the rest.
+      fetchDevices(controller.signal)
+        .then((devices) => {
+          const d = devices.find((x) => x.id === applianceId)
+          if (!d?.last_checkin_at) return setLastCheckinAt(null)
+          // Measure the age on the server's clock, then place it on ours.
+          const age = Date.parse(d.server_time) - Date.parse(d.last_checkin_at)
+          setLastCheckinAt(Date.now() - Math.max(0, age))
+        })
+        .catch(() => {})
     } catch (err) {
       if (err.name === 'AbortError') return
       setOnline(false)
@@ -43,6 +57,7 @@ export function useBackend(applianceId) {
   useEffect(() => {
     setLoading(true)
     setReadings([])
+    setLastCheckinAt(null)
     poll()
     const id = setInterval(poll, POLL_INTERVAL_MS)
     return () => {
@@ -51,5 +66,5 @@ export function useBackend(applianceId) {
     }
   }, [poll])
 
-  return { readings, applianceIds, online, error, loading, lastFetched, refresh: poll }
+  return { readings, applianceIds, online, error, loading, lastFetched, lastCheckinAt, refresh: poll }
 }

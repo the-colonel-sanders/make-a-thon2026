@@ -17,9 +17,9 @@ function message(status, zoneMs, tempC) {
  * Current temperature. When the ESP32 stops reporting, the card switches to a
  * gray "Device off" state and shows the last temperature it sent.
  */
-export function TemperatureCard({ readings, now }) {
+export function TemperatureCard({ readings, now, lastCheckinAt }) {
   const latest = readings.at(-1)
-  const device = deviceState(latest, now)
+  const device = deviceState(latest, now, lastCheckinAt)
   const off = device === 'off'
   const zoneMs = continuousZoneMs(readings, now)
   const status = off ? 'offline' : temperatureStatus(latest?.temperature_c, zoneMs)

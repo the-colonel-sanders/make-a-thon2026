@@ -135,13 +135,26 @@ def readings_in_range(start: datetime, end: datetime, appliance_id: int | None =
 
 @app.delete("/readings")
 def delete_readings(appliance_id: int | None = None):
-    """Erase the temperature history (Admin page). Omit appliance_id to erase every appliance's."""
+    """Erase the temperature history (Admin page). Omit appliance_id to erase every appliance's.
+
+    Also tells the affected ESP32s (on their next check-in) to restart their
+    danger-zone timer, so their LEDs match the now-empty history.
+    """
     with pool.connection() as conn:
         cur = conn.execute(
             "DELETE FROM temperature_readings WHERE %(aid)s::int IS NULL OR appliance_id = %(aid)s",
             {"aid": appliance_id},
         )
-    return {"deleted": cur.rowcount}
+        deleted = cur.rowcount
+        conn.execute(
+            """
+            INSERT INTO device_status (appliance_id, history_reset_pending)
+            SELECT id, true FROM appliances WHERE %(aid)s::int IS NULL OR id = %(aid)s
+            ON CONFLICT (appliance_id) DO UPDATE SET history_reset_pending = true
+            """,
+            {"aid": appliance_id},
+        )
+    return {"deleted": deleted}
 
 
 class Thresholds(BaseModel):
@@ -323,10 +336,21 @@ class CheckIn(BaseModel):
 
 @app.post("/devices/{appliance_id}/checkin")
 def device_checkin(appliance_id: int, body: CheckIn | None = None):
-    """Called by the ESP32 every few seconds. Replies with whether to flash its LEDs."""
+    """Called by the ESP32 every few seconds.
+
+    Replies with whether to flash its LEDs, whether its temperature history
+    was erased since the last check-in (then it restarts its danger-zone timer),
+    and the current danger zone / spoil time (same as GET /settings/thresholds).
+    """
     body = body or CheckIn()
     try:
         with pool.connection() as conn:
+            # Read and clear the reset flag in the same transaction as the check-in.
+            pending = conn.execute(
+                "SELECT history_reset_pending FROM device_status WHERE appliance_id = %s FOR UPDATE",
+                (appliance_id,),
+            ).fetchone()
+            history_reset = bool(pending and pending[0])
             remaining = conn.execute(
                 """
                 INSERT INTO device_status (appliance_id, last_checkin_at, ip, rssi)
@@ -334,15 +358,24 @@ def device_checkin(appliance_id: int, body: CheckIn | None = None):
                 ON CONFLICT (appliance_id) DO UPDATE SET
                     last_checkin_at = EXCLUDED.last_checkin_at,
                     ip = EXCLUDED.ip,
-                    rssi = EXCLUDED.rssi
+                    rssi = EXCLUDED.rssi,
+                    history_reset_pending = false
                 RETURNING GREATEST(EXTRACT(EPOCH FROM (locate_until - now())), 0)
                 """,
                 {"id": appliance_id, "ip": body.ip, "rssi": body.rssi},
             ).fetchone()[0]
+            # Thresholds ride along so the device needn't make a separate request.
+            thresholds = conn.execute(
+                "SELECT danger_min_c, danger_max_c, spoil_after_seconds FROM safety_thresholds"
+            ).fetchone()
     except ForeignKeyViolation:
         raise HTTPException(404, "unknown appliance_id")
     remaining_ms = int(float(remaining or 0) * 1000)
-    return {"locate": remaining_ms > 0, "locate_remaining_ms": remaining_ms}
+    reply = {"locate": remaining_ms > 0, "locate_remaining_ms": remaining_ms, "history_reset": history_reset}
+    if thresholds is not None:
+        lo, hi, secs = thresholds
+        reply.update(danger_min_c=float(lo), danger_max_c=float(hi), spoil_after_seconds=secs)
+    return reply
 
 
 @app.get("/health")

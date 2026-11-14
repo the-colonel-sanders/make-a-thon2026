@@ -53,7 +53,7 @@ export function DashboardPage({ applianceId, backend, inZoneNow, now, foodItems,
       <WarningsBanner rows={current} inZoneNow={inZoneNow && current.length > 0} />
 
       <div className={`grid ${backend.loading ? 'is-loading' : ''}`}>
-        <TemperatureCard readings={backend.readings} now={now} />
+        <TemperatureCard readings={backend.readings} now={now} lastCheckinAt={backend.lastCheckinAt} />
         <TemperatureChart readings={backend.readings} />
 
         <section className="card card--wide" aria-labelledby="items-heading">
