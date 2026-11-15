@@ -4,6 +4,7 @@
 # Run from anywhere on the LAN-facing machine:
 #   uvicorn main:app --host 0.0.0.0 --port 8000
 import os
+import unicodedata
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -214,7 +215,7 @@ def put_thresholds(t: Thresholds):
 # ---------------------------------------------------------------------------
 # Devices & "find my device"
 #
-# Each ESP32 POSTs /devices/{id}/checkin every few seconds. The reply tells it
+# Each ESP32 POSTs /devices/{id}/checkin every 250 ms. The reply tells it
 # whether to flash all its LEDs (and for how much longer). The dashboard's
 # Locate page lists devices and starts/stops locating.
 # ---------------------------------------------------------------------------
@@ -336,7 +337,7 @@ class CheckIn(BaseModel):
 
 @app.post("/devices/{appliance_id}/checkin")
 def device_checkin(appliance_id: int, body: CheckIn | None = None):
-    """Called by the ESP32 every few seconds.
+    """Called by the ESP32 every 250 ms.
 
     Replies with whether to flash its LEDs, whether its temperature history
     was erased since the last check-in (then it restarts its danger-zone timer),
@@ -351,7 +352,7 @@ def device_checkin(appliance_id: int, body: CheckIn | None = None):
                 (appliance_id,),
             ).fetchone()
             history_reset = bool(pending and pending[0])
-            remaining = conn.execute(
+            status = conn.execute(
                 """
                 INSERT INTO device_status (appliance_id, last_checkin_at, ip, rssi)
                 VALUES (%(id)s, now(), %(ip)s, %(rssi)s)
@@ -360,10 +361,13 @@ def device_checkin(appliance_id: int, body: CheckIn | None = None):
                     ip = EXCLUDED.ip,
                     rssi = EXCLUDED.rssi,
                     history_reset_pending = false
-                RETURNING GREATEST(EXTRACT(EPOCH FROM (locate_until - now())), 0)
+                RETURNING GREATEST(EXTRACT(EPOCH FROM (locate_until - now())), 0),
+                          display_item, display_employee,
+                          EXTRACT(EPOCH FROM (display_spoil_at - now()))
                 """,
                 {"id": appliance_id, "ip": body.ip, "rssi": body.rssi},
-            ).fetchone()[0]
+            ).fetchone()
+            remaining, item, employee, spoil_in = status
             # Thresholds ride along so the device needn't make a separate request.
             thresholds = conn.execute(
                 "SELECT danger_min_c, danger_max_c, spoil_after_seconds FROM safety_thresholds"
@@ -375,7 +379,77 @@ def device_checkin(appliance_id: int, body: CheckIn | None = None):
     if thresholds is not None:
         lo, hi, secs = thresholds
         reply.update(danger_min_c=float(lo), danger_max_c=float(hi), spoil_after_seconds=secs)
+    # OLED contents. Text is ASCII-only (the display font has no "—" etc.);
+    # display_spoil_in_s is negative once spoiled and null with no storage time.
+    reply.update(
+        display_item=_ascii(item),
+        display_employee=_ascii(employee),
+        display_spoil_in_s=int(spoil_in) if spoil_in is not None else None,
+    )
     return reply
+
+
+_ASCII_REPLACEMENTS = str.maketrans({"—": "-", "–": "-", "‘": "'", "’": "'", "“": '"', "”": '"', "°": " deg "})
+
+
+def _ascii(text):
+    """Plain-ASCII version of `text` for the ESP32's OLED font ('' for None)."""
+    if not text:
+        return ""
+    text = unicodedata.normalize("NFKD", text.translate(_ASCII_REPLACEMENTS))
+    return text.encode("ascii", "ignore").decode("ascii")
+
+
+class DisplayUpdate(BaseModel):
+    """The item shown on a device's OLED. item_name null clears the display."""
+
+    item_name: str | None = Field(default=None, max_length=80)
+    employee_name: str | None = Field(default=None, max_length=80)
+    spoil_at: datetime | None = None  # placed time + USDA fridge storage time
+
+
+@app.put("/devices/{appliance_id}/display")
+def set_device_display(appliance_id: int, body: DisplayUpdate):
+    """Set what the device's OLED shows (sent by the dashboard whenever its items change)."""
+    item = (body.item_name or "").strip() or None
+    employee = ((body.employee_name or "").strip() or None) if item else None
+    spoil_at = body.spoil_at if item else None
+    if spoil_at is not None and spoil_at.tzinfo is None:
+        spoil_at = spoil_at.replace(tzinfo=timezone.utc)
+    with pool.connection() as conn:
+        _require_appliance(conn, appliance_id)
+        conn.execute(
+            """
+            INSERT INTO device_status (appliance_id, display_item, display_employee, display_spoil_at)
+            VALUES (%(id)s, %(item)s, %(emp)s, %(spoil)s)
+            ON CONFLICT (appliance_id) DO UPDATE SET
+                display_item = EXCLUDED.display_item,
+                display_employee = EXCLUDED.display_employee,
+                display_spoil_at = EXCLUDED.display_spoil_at
+            """,
+            {"id": appliance_id, "item": item, "emp": employee, "spoil": spoil_at},
+        )
+    return {"appliance_id": appliance_id, "item_name": item, "employee_name": employee, "spoil_at": spoil_at}
+
+
+GUIDELINE_COLUMNS = (
+    "code", "chart", "sort_order", "category", "product", "description", "label", "state", "foods", "keywords",
+    "min_temp_f", "rest_minutes", "cook_note", "fridge", "freezer",
+)
+
+
+@app.get("/food-guidelines")
+def list_food_guidelines():
+    """USDA FSIS cold-storage and cooking-temperature charts (db/migrations/004_food_guidelines.sql).
+
+    The whole table is small (~70 rows), so the dashboard fetches it once and
+    runs its item search in the browser instead of querying per keystroke.
+    """
+    with pool.connection() as conn:
+        rows = conn.execute(
+            f"SELECT {', '.join(GUIDELINE_COLUMNS)} FROM food_guidelines ORDER BY chart DESC, sort_order"
+        ).fetchall()
+    return [dict(zip(GUIDELINE_COLUMNS, row)) for row in rows]
 
 
 @app.get("/health")

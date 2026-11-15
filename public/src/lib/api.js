@@ -90,6 +90,11 @@ export async function deleteReadings(applianceId) {
   return (await res.json()).deleted
 }
 
+/** GET /food-guidelines -> every row of the USDA cold-storage and cooking-temperature charts. */
+export async function fetchFoodGuidelines(signal) {
+  return getJson('/food-guidelines', signal)
+}
+
 // ---------------------------------------------------------------------------
 // Devices & "find my device" (api/main.py /devices)
 // ---------------------------------------------------------------------------
@@ -114,6 +119,9 @@ export const locateDevice = (id, seconds) => send('POST', `/devices/${id}/locate
 
 /** Stop flashing early. */
 export const stopLocateDevice = (id) => send('DELETE', `/devices/${id}/locate`)
+
+/** Set what the device's OLED shows: { item_name, employee_name, spoil_at } (item_name null clears it). */
+export const setDeviceDisplay = (id, body) => send('PUT', `/devices/${id}/display`, body)
 
 /** Rename a device or set its location text. */
 export const updateDevice = (id, patch) => send('PATCH', `/devices/${id}`, patch)

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { fetchThresholds } from '../lib/api.js'
 import { updateSettings } from '../lib/settings.js'
 
-const REFRESH_MS = 60_000
+const REFRESH_MS = 5_000
 
 /** Re-read the thresholds from the database now (e.g. when the Admin page opens). */
 export async function syncThresholds(signal) {
@@ -13,7 +13,7 @@ export async function syncThresholds(signal) {
 
 /**
  * The database holds the danger zone and spoil time (set on the Admin page).
- * Load them on start and refresh every minute, so every browser uses the same
+ * Load them on start and refresh every 5 s, so every browser uses the same
  * values. While the API is unreachable, the last values seen stay in use.
  */
 export function useServerThresholds() {

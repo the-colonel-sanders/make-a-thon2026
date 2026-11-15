@@ -1,6 +1,9 @@
+import { useState } from 'react'
 import { StatusBadge } from './StatusBadge.jsx'
+import { RenameItemForm } from './RenameItemForm.jsx'
 import { formatDateTime, formatDuration } from '../lib/format.js'
 import { getSettings } from '../lib/settings.js'
+import { guidelineSummary } from '../lib/foodSearch.js'
 
 const itemHref = (id) => `#/item/${encodeURIComponent(id)}`
 
@@ -8,7 +11,9 @@ const itemHref = (id) => `#/item/${encodeURIComponent(id)}`
  * One row per food item: when it went in, how long it's been in the fridge,
  * how much of that time was spent in the danger zone, and its status.
  */
-export function ItemTable({ rows, now, removed = false, onRemove, onRestore, onDelete }) {
+export function ItemTable({ rows, now, removed = false, onRemove, onRestore, onDelete, onRename }) {
+  const [renamingId, setRenamingId] = useState(null)
+
   if (!rows.length) {
     return (
       <p className="empty">
@@ -38,7 +43,20 @@ export function ItemTable({ rows, now, removed = false, onRemove, onRestore, onD
             return (
               <tr key={item.id} className={`row--${status}`}>
                 <td data-label="Item" className="items__name">
-                  <a href={itemHref(item.id)} title={`Inspect ${item.name}`}>{item.name}</a>
+                  {renamingId === item.id ? (
+                    <RenameItemForm
+                      name={item.name}
+                      onSave={(name) => onRename(item.id, name)}
+                      onCancel={() => setRenamingId(null)}
+                    />
+                  ) : (
+                    <a href={itemHref(item.id)} title={`Inspect ${item.name}`}>{item.name}</a>
+                  )}
+                  {item.guideline && (
+                    <span className="items__guideline" title="USDA FSIS guideline">
+                      {guidelineSummary(item.guideline)}
+                    </span>
+                  )}
                 </td>
                 <td data-label="Added by">
                   {item.added_by_name ?? <span className="muted">–</span>}
@@ -59,6 +77,9 @@ export function ItemTable({ rows, now, removed = false, onRemove, onRestore, onD
                 <td data-label="Status"><StatusBadge status={status} /></td>
                 <td className="items__actions">
                   <a className="btn btn--ghost btn--sm" href={itemHref(item.id)}>Inspect</a>
+                  {onRename && renamingId !== item.id && (
+                    <button type="button" className="btn btn--ghost btn--sm" onClick={() => setRenamingId(item.id)}>Rename</button>
+                  )}
                   {removed ? (
                     <>
                       <button type="button" className="btn btn--ghost btn--sm" onClick={() => onRestore(item.id)}>Restore</button>

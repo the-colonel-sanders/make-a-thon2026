@@ -15,8 +15,9 @@ export const NEAR_ZONE_MARGIN_C = 2
 // (total time it has spent in the zone).
 export const RED_EXPOSURE_MS = 2 * 60 * 1000
 
-// How often to poll the backend.
-export const POLL_INTERVAL_MS = 10_000
+// How often to poll the backend. Short so the site changes color within ~2 s of
+// the ESP32 LEDs (the device uploads a reading the moment the zone changes).
+export const POLL_INTERVAL_MS = 2_000
 
 // The ESP32 posts every 30 s. With no reading for this long (three missed
 // readings), the device is shown as off and the last reading as "last known".

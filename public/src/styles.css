@@ -221,6 +221,25 @@ details.card > summary { cursor: pointer; list-style-position: inside; }
 .form-error { grid-column: 1 / -1; color: var(--crit-text); font-size: 0.85rem; }
 @media (max-width: 640px) { .add-form { grid-template-columns: 1fr; } }
 
+/* USDA food search (AddItemForm) */
+.combo { position: relative; }
+.combo input { width: 100%; }
+.combo__list { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: min(360px, 60vh); overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14); padding: 4px 0; }
+.combo__group { position: sticky; top: -4px; display: flex; justify-content: space-between; gap: 8px; padding: 8px 12px 4px; background: var(--surface); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.combo__group-hint { font-weight: 500; letter-spacing: 0; text-transform: none; }
+.combo__option { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 7px 12px; cursor: pointer; color: var(--ink); font-size: 0.9rem; }
+.combo__option.is-active { background: var(--accent-soft); }
+.combo__label { min-width: 0; }
+.combo__meta { flex: none; font-size: 0.78rem; font-variant-numeric: tabular-nums; color: var(--ink-2); white-space: nowrap; }
+.combo__meta--cooking { color: var(--accent-text); font-weight: 600; }
+.combo__empty { padding: 10px 12px; color: var(--muted); font-size: 0.85rem; }
+.combo__chosen { grid-column: 1 / -1; margin-top: -4px; font-size: 0.82rem; color: var(--ink-2); }
+@media (max-width: 640px) {
+  .combo__option { flex-direction: column; gap: 2px; }
+  .combo__meta { white-space: normal; }
+  .combo__group-hint { display: none; }
+}
+
 /* ---------- Tables ---------- */
 .table-wrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
@@ -333,6 +352,7 @@ details.card > summary { cursor: pointer; list-style-position: inside; }
 .meter--left { margin-left: 0; }
 .items__name a { color: var(--ink); text-decoration: none; border-bottom: 1px dashed var(--axis); }
 .items__name a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.items__guideline { display: block; margin-top: 2px; font-size: 0.78rem; font-weight: 400; color: var(--muted); }
 a.btn { display: inline-block; text-decoration: none; }
 .items__actions .btn + .btn { margin-left: 4px; }
 
@@ -458,3 +478,9 @@ input[type='range'] { width: min(320px, 100%); accent-color: var(--accent); }
   .loc-logo__ring { animation: none; opacity: 0.4; }
   .led-preview.is-flashing .led { animation-duration: 1.2s; }
 }
+
+/* Inline item rename (dashboard table and item page) */
+.rename-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.rename-form input { flex: 1 1 160px; padding: 4px 8px; font-weight: 400; }
+.rename-form .form-error { flex-basis: 100%; margin: 0; }
+.rename-form--title input { font-size: 1.3rem; font-weight: 600; flex-basis: 260px; }

@@ -10,7 +10,7 @@ const SEVERITY = { critical: 0, warning: 1, safe: 2 }
 
 /** Live view: current temperature, recent history, and the items in the fridge. */
 export function DashboardPage({ applianceId, backend, inZoneNow, now, foodItems, profile }) {
-  const { items, addItem, removeItem, restoreItem, deleteItem } = foodItems
+  const { items, addItem, removeItem, restoreItem, deleteItem, renameItem } = foodItems
   const [ownerFilter, setOwnerFilter] = useState('all') // 'all' or a profile name
 
   const intervals = useMemo(() => buildIntervals(backend.readings, now), [backend.readings, now])
@@ -74,13 +74,20 @@ export function DashboardPage({ applianceId, backend, inZoneNow, now, foodItems,
             )}
           </div>
           <AddItemForm profile={profile} onAdd={(v) => addItem({ ...v, applianceId, profile })} />
-          <ItemTable rows={shownCurrent} now={now} onRemove={(id) => removeItem(id, profile)} />
+          <ItemTable rows={shownCurrent} now={now} onRemove={(id) => removeItem(id, profile)} onRename={renameItem} />
         </section>
 
         {shownRemoved.length > 0 && (
           <details className="card card--wide">
             <summary className="card__title">Removed items <span className="count">{shownRemoved.length}</span></summary>
-            <ItemTable rows={shownRemoved} now={now} removed onRestore={restoreItem} onDelete={deleteItem} />
+            <ItemTable
+              rows={shownRemoved}
+              now={now}
+              removed
+              onRestore={restoreItem}
+              onDelete={deleteItem}
+              onRename={renameItem}
+            />
           </details>
         )}
       </div>

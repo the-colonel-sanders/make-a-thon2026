@@ -13,6 +13,7 @@ import { NotificationList } from './components/NotificationList.jsx'
 import { useProfiles } from './hooks/useProfiles.js'
 import { useBackend } from './hooks/useBackend.js'
 import { useDangerAlerts } from './hooks/useDangerAlerts.js'
+import { useDeviceDisplaySync } from './hooks/useDeviceDisplaySync.js'
 import { useFoodItems } from './hooks/useFoodItems.js'
 import { useHashRoute } from './hooks/useHashRoute.js'
 import { useNow } from './hooks/useNow.js'
@@ -35,6 +36,7 @@ export default function App() {
   const backend = useBackend(applianceId)
   const foodItems = useFoodItems()
   const profiles = useProfiles()
+  useDeviceDisplaySync(foodItems.items, backend.applianceIds)
 
   const latest = backend.readings.at(-1)
   const device = deviceState(latest, now, backend.lastCheckinAt) // 'on' | 'off' | 'unknown'
@@ -133,6 +135,7 @@ export default function App() {
             inZoneNow={inZoneNow}
             onRemove={(id) => foodItems.removeItem(id, profiles.active)}
             onRestore={foodItems.restoreItem}
+            onRename={foodItems.renameItem}
           />
         ) : (
           <DashboardPage
@@ -146,7 +149,7 @@ export default function App() {
         )}
 
         <footer className="footer muted small">
-          Readings refresh every 10 s. Items and profiles are saved in this browser only.
+          Readings refresh every 2 s. Items and profiles are saved in this browser only.
         </footer>
       </main>
 

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { StatusBadge } from '../components/StatusBadge.jsx'
+import { RenameItemForm } from '../components/RenameItemForm.jsx'
 import { TemperatureChart } from '../components/TemperatureChart.jsx'
 import { fetchReadingsRange } from '../lib/api.js'
 import { downloadCsv, localDate, readingsToCsv } from '../lib/csv.js'
@@ -14,8 +15,9 @@ const CHART_POINTS = 1200
  * One food item: its details, danger-zone exposure and the fridge temperature
  * for the whole time it has been (or was) in the fridge.
  */
-export function ItemPage({ itemId, items, now, liveReadings, liveApplianceId, inZoneNow, onRemove, onRestore }) {
+export function ItemPage({ itemId, items, now, liveReadings, liveApplianceId, inZoneNow, onRemove, onRestore, onRename }) {
   const item = items.find((it) => it.id === itemId)
+  const [renaming, setRenaming] = useState(false)
   const [readings, setReadings] = useState([])
   const [status, setStatus] = useState('loading') // loading | done | error
   const [error, setError] = useState(null)
@@ -118,7 +120,16 @@ export function ItemPage({ itemId, items, now, liveReadings, liveApplianceId, in
       <a className="back-link" href="#/">← Home</a>
       <div className="page-head">
         <div>
-          <h1 className="page-head__title">{item.name}</h1>
+          {renaming ? (
+            <RenameItemForm
+              className="rename-form--title"
+              name={item.name}
+              onSave={(name) => onRename(item.id, name)}
+              onCancel={() => setRenaming(false)}
+            />
+          ) : (
+            <h1 className="page-head__title">{item.name}</h1>
+          )}
           <p className="page-head__sub">
             Fridge #{item.appliance_id}
             {item.added_by_name && <> · added by {item.added_by_name}</>}
@@ -126,6 +137,9 @@ export function ItemPage({ itemId, items, now, liveReadings, liveApplianceId, in
           </p>
         </div>
         <div className="page-head__actions">
+          {!renaming && (
+            <button type="button" className="btn btn--ghost" onClick={() => setRenaming(true)}>Rename</button>
+          )}
           {removedAt == null ? (
             <button type="button" className="btn btn--ghost" onClick={() => onRemove(item.id)}>Mark as removed</button>
           ) : (

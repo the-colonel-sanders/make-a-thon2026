@@ -3,7 +3,7 @@ import { fetchDevices, locateDevice, stopLocateDevice, updateDevice } from '../l
 import { formatDateTime, formatDuration, formatTemp } from '../lib/format.js'
 
 const POLL_MS = 3000
-// The firmware checks in every 3 s; a few missed check-ins means it's not connected.
+// The firmware checks in every 250 ms; no check-in for this long means it's not connected.
 const CONNECTED_WITHIN_MS = 15_000
 const DURATIONS = [
   { seconds: 15, label: '15 s' },

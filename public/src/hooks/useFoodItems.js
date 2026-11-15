@@ -35,7 +35,9 @@ export function useFoodItems() {
 
   // `profile` is { id, name } of whoever is using the dashboard. The name is
   // copied onto the item so it still shows if the profile is later removed.
-  const addItem = useCallback(({ name, applianceId, placedAt, profile }) => {
+  // `guideline` is the USDA chart row picked in the search (see AddItemForm),
+  // or null for an item typed freely.
+  const addItem = useCallback(({ name, applianceId, placedAt, profile, guideline = null }) => {
     setItems((prev) => [
       ...prev,
       {
@@ -47,6 +49,7 @@ export function useFoodItems() {
         added_by_id: profile?.id ?? null,
         added_by_name: profile?.name ?? null,
         removed_by_name: null,
+        guideline,
       },
     ])
   }, [])
@@ -71,6 +74,13 @@ export function useFoodItems() {
     setItems((prev) => prev.filter((it) => it.id !== id))
   }, [])
 
+  /** Change an item's name (also updates the fridge's OLED via useDeviceDisplaySync). */
+  const renameItem = useCallback((id, name) => {
+    const trimmed = name.trim()
+    if (!trimmed) return
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, name: trimmed } : it)))
+  }, [])
+
   /** Keep item records in step when an employee is renamed. */
   const renameAddedBy = useCallback((profileId, name) => {
     setItems((prev) => prev.map((it) => (it.added_by_id === profileId ? { ...it, added_by_name: name } : it)))
@@ -81,5 +91,5 @@ export function useFoodItems() {
     setItems((prev) => prev.filter((it) => !it.removed_at))
   }, [])
 
-  return { items, addItem, removeItem, restoreItem, deleteItem, renameAddedBy, clearRemoved }
+  return { items, addItem, removeItem, restoreItem, deleteItem, renameItem, renameAddedBy, clearRemoved }
 }
