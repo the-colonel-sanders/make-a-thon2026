@@ -31,7 +31,8 @@ export function TemperatureCard({ readings, now, lastCheckinAt }) {
     <section className={`card temp-card temp-card--${status}`} aria-labelledby="temp-heading">
       <div className="card__head">
         <h2 id="temp-heading" className="card__title">{off ? 'Last known temperature' : 'Current temperature'}</h2>
-        <StatusBadge status={status} />
+        {/* "Spoiled" is for food; the fridge itself is "Unsafe" when red. */}
+        <StatusBadge status={status} label={status === 'critical' ? 'Unsafe' : undefined} />
       </div>
       <p className="temp-card__value">{formatTemp(latest?.temperature_c)}</p>
       {off ? (

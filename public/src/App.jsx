@@ -17,6 +17,7 @@ import { useDeviceDisplaySync } from './hooks/useDeviceDisplaySync.js'
 import { useFoodItems } from './hooks/useFoodItems.js'
 import { useHashRoute } from './hooks/useHashRoute.js'
 import { useNow } from './hooks/useNow.js'
+import { useSpoilTracking } from './hooks/useSpoilTracking.js'
 import { useServerThresholds } from './hooks/useServerThresholds.js'
 import { continuousZoneMs, deviceState, isInDangerZone } from './lib/safety.js'
 import { formatDateTime, formatDuration, formatTemp } from './lib/format.js'
@@ -36,7 +37,8 @@ export default function App() {
   const backend = useBackend(applianceId)
   const foodItems = useFoodItems()
   const profiles = useProfiles()
-  useDeviceDisplaySync(foodItems.items, backend.applianceIds)
+  const exposures = useSpoilTracking(foodItems.items, backend.readings, applianceId, now, foodItems.markSpoiled)
+  useDeviceDisplaySync(foodItems.items, backend.applianceIds, exposures)
 
   const latest = backend.readings.at(-1)
   const device = deviceState(latest, now, backend.lastCheckinAt) // 'on' | 'off' | 'unknown'
@@ -73,12 +75,15 @@ export default function App() {
       />
 
       <main className="app">
-        <NotificationList
-          notifications={alerts.history}
-          now={now}
-          onDismiss={alerts.dismissHistory}
-          onClear={alerts.clearHistory}
-        />
+        {/* The History page has its own notification section. */}
+        {route !== '/history' && (
+          <NotificationList
+            notifications={alerts.history}
+            now={now}
+            onDismiss={alerts.dismissHistory}
+            onClear={alerts.clearHistory}
+          />
+        )}
 
         {route === '/admin' && backend.online === false && (
           <div className="banner banner--offline" role="status">
@@ -123,7 +128,14 @@ export default function App() {
             onClearNotifications={alerts.clearHistory}
           />
         ) : route === '/history' ? (
-          <HistoryPage applianceId={applianceId} applianceIds={backend.applianceIds} />
+          <HistoryPage
+            applianceId={applianceId}
+            applianceIds={backend.applianceIds}
+            notifications={alerts.history}
+            now={now}
+            onDismissNotification={alerts.dismissHistory}
+            onClearNotifications={alerts.clearHistory}
+          />
         ) : route.startsWith('/item/') ? (
           <ItemPage
             key={route}

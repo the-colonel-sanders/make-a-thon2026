@@ -151,7 +151,11 @@ def delete_readings(appliance_id: int | None = None):
             """
             INSERT INTO device_status (appliance_id, history_reset_pending)
             SELECT id, true FROM appliances WHERE %(aid)s::int IS NULL OR id = %(aid)s
-            ON CONFLICT (appliance_id) DO UPDATE SET history_reset_pending = true
+            ON CONFLICT (appliance_id) DO UPDATE SET
+                history_reset_pending = true,
+                -- The erased readings were the OLED item's danger-zone time too
+                -- (a spoiled item stays spoiled: display_spoiled is kept).
+                display_exposure_ms = 0
             """,
             {"aid": appliance_id},
         )
@@ -363,11 +367,12 @@ def device_checkin(appliance_id: int, body: CheckIn | None = None):
                     history_reset_pending = false
                 RETURNING GREATEST(EXTRACT(EPOCH FROM (locate_until - now())), 0),
                           display_item, display_employee,
-                          EXTRACT(EPOCH FROM (display_spoil_at - now()))
+                          EXTRACT(EPOCH FROM (display_spoil_at - now())),
+                          display_item_id, display_spoiled, display_exposure_ms
                 """,
                 {"id": appliance_id, "ip": body.ip, "rssi": body.rssi},
             ).fetchone()
-            remaining, item, employee, spoil_in = status
+            remaining, item, employee, spoil_in, item_id, spoiled, exposure_ms = status
             # Thresholds ride along so the device needn't make a separate request.
             thresholds = conn.execute(
                 "SELECT danger_min_c, danger_max_c, spoil_after_seconds FROM safety_thresholds"
@@ -380,11 +385,16 @@ def device_checkin(appliance_id: int, body: CheckIn | None = None):
         lo, hi, secs = thresholds
         reply.update(danger_min_c=float(lo), danger_max_c=float(hi), spoil_after_seconds=secs)
     # OLED contents. Text is ASCII-only (the display font has no "—" etc.);
-    # display_spoil_in_s is negative once spoiled and null with no storage time.
+    # display_spoil_in_s is negative past the USDA storage time and null with
+    # no storage time. display_spoiled / display_exposure_ms are the item's
+    # danger-zone status (spoiled sticks; the device keeps counting exposure).
     reply.update(
         display_item=_ascii(item),
         display_employee=_ascii(employee),
         display_spoil_in_s=int(spoil_in) if spoil_in is not None else None,
+        display_item_id=_ascii(item_id),
+        display_spoiled=bool(spoiled),
+        display_exposure_ms=int(exposure_ms or 0),
     )
     return reply
 
@@ -406,6 +416,9 @@ class DisplayUpdate(BaseModel):
     item_name: str | None = Field(default=None, max_length=80)
     employee_name: str | None = Field(default=None, max_length=80)
     spoil_at: datetime | None = None  # placed time + USDA fridge storage time
+    item_id: str | None = Field(default=None, max_length=64)
+    spoiled: bool = False  # spent the spoil time in the danger zone (stays true)
+    exposure_ms: int = Field(default=0, ge=0)  # danger-zone time so far
 
 
 @app.put("/devices/{appliance_id}/display")
@@ -414,27 +427,36 @@ def set_device_display(appliance_id: int, body: DisplayUpdate):
     item = (body.item_name or "").strip() or None
     employee = ((body.employee_name or "").strip() or None) if item else None
     spoil_at = body.spoil_at if item else None
+    item_id = body.item_id if item else None
+    spoiled = body.spoiled if item else False
+    exposure_ms = body.exposure_ms if item else 0
     if spoil_at is not None and spoil_at.tzinfo is None:
         spoil_at = spoil_at.replace(tzinfo=timezone.utc)
     with pool.connection() as conn:
         _require_appliance(conn, appliance_id)
         conn.execute(
             """
-            INSERT INTO device_status (appliance_id, display_item, display_employee, display_spoil_at)
-            VALUES (%(id)s, %(item)s, %(emp)s, %(spoil)s)
+            INSERT INTO device_status (appliance_id, display_item, display_employee, display_spoil_at,
+                                       display_item_id, display_spoiled, display_exposure_ms)
+            VALUES (%(id)s, %(item)s, %(emp)s, %(spoil)s, %(item_id)s, %(spoiled)s, %(exp)s)
             ON CONFLICT (appliance_id) DO UPDATE SET
                 display_item = EXCLUDED.display_item,
                 display_employee = EXCLUDED.display_employee,
-                display_spoil_at = EXCLUDED.display_spoil_at
+                display_spoil_at = EXCLUDED.display_spoil_at,
+                display_item_id = EXCLUDED.display_item_id,
+                display_spoiled = EXCLUDED.display_spoiled,
+                display_exposure_ms = EXCLUDED.display_exposure_ms
             """,
-            {"id": appliance_id, "item": item, "emp": employee, "spoil": spoil_at},
+            {"id": appliance_id, "item": item, "emp": employee, "spoil": spoil_at,
+             "item_id": item_id, "spoiled": spoiled, "exp": exposure_ms},
         )
-    return {"appliance_id": appliance_id, "item_name": item, "employee_name": employee, "spoil_at": spoil_at}
+    return {"appliance_id": appliance_id, "item_name": item, "employee_name": employee, "spoil_at": spoil_at,
+            "item_id": item_id, "spoiled": spoiled, "exposure_ms": exposure_ms}
 
 
 GUIDELINE_COLUMNS = (
     "code", "chart", "sort_order", "category", "product", "description", "label", "state", "foods", "keywords",
-    "min_temp_f", "rest_minutes", "cook_note", "fridge", "freezer",
+    "min_temp_f", "rest_minutes", "cook_note", "fridge", "freezer", "note",
 )
 
 

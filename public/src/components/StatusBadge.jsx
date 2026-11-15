@@ -1,8 +1,8 @@
 // Status shown as color + icon + text, so meaning never relies on color alone.
 const LABELS = {
   safe: { icon: '✓', text: 'Safe' },
-  warning: { icon: '!', text: 'Caution' },
-  critical: { icon: '✕', text: 'Danger' },
+  warning: { icon: '!', text: 'Danger' },   // yellow
+  critical: { icon: '✕', text: 'Spoiled' }, // red
   unknown: { icon: '?', text: 'No data' },
   offline: { icon: '⏻', text: 'Device off' },
 }

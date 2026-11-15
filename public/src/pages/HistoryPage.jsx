@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TemperatureChart } from '../components/TemperatureChart.jsx'
+import { NotificationHistory } from '../components/NotificationHistory.jsx'
 import { fetchReadingsRange } from '../lib/api.js'
 import { downloadCsv, localDate, readingsToCsv } from '../lib/csv.js'
 import { downsample } from '../lib/downsample.js'
@@ -37,7 +38,7 @@ function toLocalInput(t) {
 
 
 /** Temperature log for a chosen time range, with a CSV export. */
-export function HistoryPage({ applianceId, applianceIds }) {
+export function HistoryPage({ applianceId, applianceIds, notifications, now, onDismissNotification, onClearNotifications }) {
   const [preset, setPreset] = useState('yesterday')
   const [scope, setScope] = useState('current') // 'current' appliance or 'all'
   const [customStart, setCustomStart] = useState(() => toLocalInput(Date.now() - DAY))
@@ -148,9 +149,16 @@ export function HistoryPage({ applianceId, applianceIds }) {
       <div className="page-head">
         <div>
           <h1 className="page-head__title">History</h1>
-          <p className="page-head__sub">Browse past temperature logs and export them as CSV</p>
+          <p className="page-head__sub">Browse past notifications and temperature logs, and export them as CSV</p>
         </div>
       </div>
+
+      <NotificationHistory
+        notifications={notifications}
+        now={now}
+        onDismiss={onDismissNotification}
+        onClear={onClearNotifications}
+      />
 
       <section className="card filters" aria-label="Time range">
         <div className="segmented" role="radiogroup" aria-label="Time range">

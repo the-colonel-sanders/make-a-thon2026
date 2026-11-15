@@ -10,6 +10,39 @@ function ago(ms) {
 }
 
 /**
+ * One notification row. `onActivate` runs when the body is clicked (expand
+ * in place, or open the full list from a preview); `open` shows the detail.
+ */
+export function NotificationItem({ n, now, open = false, onActivate, onDismiss, activateTitle }) {
+  return (
+    <li className={`notif notif--${n.level}`} data-notif-id={n.id}>
+      <span className="notif__icon" aria-hidden="true">{ICONS[n.level] ?? '•'}</span>
+      <button
+        type="button"
+        className="notif__body"
+        aria-expanded={open}
+        onClick={onActivate}
+        title={activateTitle ?? (open ? 'Show less' : 'Show details')}
+      >
+        <span className="notif__title">{n.title}</span>
+        <span className={`notif__msg ${open ? 'is-open' : ''}`}>
+          {n.message}
+          {open && n.detail && <strong> {n.detail}</strong>}
+        </span>
+      </button>
+      <time className="notif__time" dateTime={new Date(n.time).toISOString()} title={formatTime(n.time)}>
+        {ago(now - n.time)}
+      </time>
+      {onDismiss && (
+        <button type="button" className="notif__close" onClick={() => onDismiss(n.id)} aria-label="Dismiss notification">
+          ×
+        </button>
+      )}
+    </li>
+  )
+}
+
+/**
  * The most recent notifications (same ones as the popups), stacked at the top
  * of every page so they're still visible after the popups fade.
  */
@@ -31,28 +64,14 @@ export function NotificationList({ notifications, now, onDismiss, onClear }) {
         {shown.map((n) => {
           const open = expanded === n.id
           return (
-            <li key={n.id} className={`notif notif--${n.level}`}>
-              <span className="notif__icon" aria-hidden="true">{ICONS[n.level] ?? '•'}</span>
-              <button
-                type="button"
-                className="notif__body"
-                aria-expanded={open}
-                onClick={() => setExpanded(open ? null : n.id)}
-                title={open ? 'Show less' : 'Show details'}
-              >
-                <span className="notif__title">{n.title}</span>
-                <span className={`notif__msg ${open ? 'is-open' : ''}`}>
-                  {n.message}
-                  {open && n.detail && <strong> {n.detail}</strong>}
-                </span>
-              </button>
-              <time className="notif__time" dateTime={new Date(n.time).toISOString()} title={formatTime(n.time)}>
-                {ago(now - n.time)}
-              </time>
-              <button type="button" className="notif__close" onClick={() => onDismiss(n.id)} aria-label="Dismiss notification">
-                ×
-              </button>
-            </li>
+            <NotificationItem
+              key={n.id}
+              n={n}
+              now={now}
+              open={open}
+              onActivate={() => setExpanded(open ? null : n.id)}
+              onDismiss={onDismiss}
+            />
           )
         })}
       </ol>

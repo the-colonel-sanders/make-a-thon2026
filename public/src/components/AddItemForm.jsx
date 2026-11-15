@@ -3,7 +3,7 @@ import { useFoodGuidelines } from '../hooks/useFoodGuidelines.js'
 import { guidelineSummary, searchFoods } from '../lib/foodSearch.js'
 
 const GROUPS = [
-  { chart: 'storage', title: 'Cold storage', hint: 'Fridge 40 °F · Freezer 0 °F' },
+  { chart: 'storage', title: 'Cold storage', hint: 'Refrigerator at 40 °F' },
   { chart: 'cooking', title: 'Cooking temperatures', hint: 'Safe minimum internal temperature' },
 ]
 
@@ -18,6 +18,7 @@ const snapshot = ({ row, label }) => ({
   min_temp_f: row.min_temp_f,
   rest_minutes: row.rest_minutes,
   cook_note: row.cook_note,
+  note: row.note ?? null,
 })
 
 /**
@@ -141,10 +142,11 @@ export function AddItemForm({ onAdd, profile }) {
                         onMouseDown={(e) => e.preventDefault()} // keep focus in the input
                         onMouseEnter={() => setActive(i)}
                         onClick={() => choose(opt)}
+                        title={opt.row.note ?? undefined}
                       >
                         <span className="combo__label">{opt.label}</span>
                         <span className={`combo__meta combo__meta--${opt.row.chart}`}>
-                          {guidelineSummary(opt.row)}
+                          {guidelineSummary(opt.row, { freezer: false })}
                         </span>
                       </div>
                     )
@@ -165,7 +167,8 @@ export function AddItemForm({ onAdd, profile }) {
       <button type="submit" className="btn btn--primary">Add item</button>
       {selected && selected.label === name && (
         <p className="combo__chosen">
-          USDA {selected.row.chart === 'storage' ? 'cold storage' : 'cooking'}: {guidelineSummary(selected.row)}
+          {selected.row.chart === 'storage' ? 'Cold storage' : 'USDA cooking'}: {guidelineSummary(selected.row)}
+          {selected.row.note && <> · {selected.row.note}</>}
         </p>
       )}
       {error && <p className="form-error" role="alert">{error}</p>}

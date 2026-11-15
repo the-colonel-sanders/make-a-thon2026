@@ -20,13 +20,13 @@
 
   /* Status (fixed): good / warning / critical */
   --good: #0ca30c;
-  --warn: #f39c12; /* yellowish orange: in the danger zone under 2 minutes */
+  --warn: #f2c200; /* yellow: in the danger zone, not yet spoiled */
   --crit: #d03b3b;
   --good-bg: #e7f5e7;
-  --warn-bg: #fff0d9;
+  --warn-bg: #fff8d1;
   --crit-bg: #fbe9e9;
   --good-text: #006300;
-  --warn-text: #8a4b00;
+  --warn-text: #725a00;
   --crit-text: #a12828;
   --band: rgba(208, 59, 59, 0.08);
 
@@ -55,10 +55,10 @@
     --accent-soft: rgba(196, 80, 110, 0.14);
     --accent-text: #e58aa1;
     --good-bg: rgba(12, 163, 12, 0.14);
-    --warn-bg: rgba(243, 156, 18, 0.16);
+    --warn-bg: rgba(242, 194, 0, 0.16);
     --crit-bg: rgba(208, 59, 59, 0.18);
     --good-text: #4fcf4f;
-    --warn-text: #f5b04a;
+    --warn-text: #f5d24a;
     --crit-text: #f08080;
     --band: rgba(208, 59, 59, 0.14);
   }
@@ -80,10 +80,10 @@
   --accent-soft: rgba(196, 80, 110, 0.14);
   --accent-text: #e58aa1;
   --good-bg: rgba(12, 163, 12, 0.14);
-  --warn-bg: rgba(243, 156, 18, 0.16);
+  --warn-bg: rgba(242, 194, 0, 0.16);
   --crit-bg: rgba(208, 59, 59, 0.18);
   --good-text: #4fcf4f;
-  --warn-text: #f5b04a;
+  --warn-text: #f5d24a;
   --crit-text: #f08080;
   --band: rgba(208, 59, 59, 0.14);
 }
@@ -324,8 +324,17 @@ details.card > summary { cursor: pointer; list-style-position: inside; }
 .notifs__title { font-size: 0.85rem; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: 0.04em; }
 .notifs__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .notif { display: flex; align-items: flex-start; gap: 10px; padding: 8px 8px 8px 12px; border-radius: 10px; background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--muted); box-shadow: var(--shadow); }
-.notif:nth-child(2) { opacity: 0.92; }
-.notif:nth-child(3) { opacity: 0.84; }
+.notifs .notif:nth-child(2) { opacity: 0.92; }
+.notifs .notif:nth-child(3) { opacity: 0.84; }
+
+/* ---------- All-notifications dialog (History page) ---------- */
+.notif-dialog { width: min(640px, calc(100vw - 32px)); max-height: min(80vh, 720px); padding: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--page); color: var(--ink); box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25); }
+.notif-dialog[open] { display: flex; flex-direction: column; }
+.notif-dialog::backdrop { background: rgba(0, 0, 0, 0.45); }
+.notif-dialog__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.notif-dialog__actions { display: flex; align-items: center; gap: 6px; }
+.notif-dialog__list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 16px; }
+.notif-dialog__list .notif { box-shadow: none; }
 .notif__icon { flex: none; display: grid; place-items: center; width: 22px; height: 22px; margin-top: 1px; border-radius: 50%; font-size: 0.72rem; font-weight: 700; color: #fff; background: var(--muted); }
 .notif__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; text-align: left; font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
 .notif__body:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }

@@ -127,10 +127,15 @@ export function searchFoods(index, query, limit = 40) {
   return results.slice(0, limit)
 }
 
-/** Short guideline summary for an item, e.g. "Fridge: 1–2 days · Freezer: 3–4 months". */
-export function guidelineSummary(g) {
+/**
+ * Short guideline summary for an item, e.g. "Fridge: 1–2 days · Freezer: 3–4 months".
+ * `freezer: false` leaves the freezer time out (used by the search dropdown).
+ */
+export function guidelineSummary(g, { freezer = true } = {}) {
   if (!g) return null
-  if (g.chart === 'storage') return `Fridge: ${g.fridge} · Freezer: ${g.freezer}`
+  if (g.chart === 'storage') {
+    return freezer && g.freezer ? `Fridge: ${g.fridge} · Freezer: ${g.freezer}` : `Fridge: ${g.fridge}`
+  }
   const parts = []
   if (g.min_temp_f != null) parts.push(`${g.state === 'cooked' ? 'Reheat' : 'Cook'} to ${g.min_temp_f} °F`)
   if (g.rest_minutes) parts.push(`rest ${g.rest_minutes} min`)

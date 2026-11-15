@@ -46,14 +46,21 @@ export function dangerExposureMs(item, intervals, now) {
   return total
 }
 
+/** True once an item has spent the red-alert time (in total) in the danger zone. */
+export const hasSpoiled = (exposureMs) => exposureMs >= cfg().redExposureMs
+
 /**
  * 'safe' | 'warning' | 'critical' for an item.
- * Red once total exposure reaches the red-alert time. Yellowish orange for any
- * shorter exposure, or while the fridge is in the zone right now.
+ *  - critical (red, "Spoiled"): total exposure reached the red-alert time, or
+ *    the item was marked spoiled earlier (`spoiledAt`). Spoiled sticks, even
+ *    after the fridge cools down or the temperature history is erased.
+ *  - warning (yellow, "Danger"): only while the fridge is in the zone right now.
+ *  - safe: otherwise, including after a danger spell that didn't spoil it.
+ *    Its exposure so far still counts toward spoiling if the fridge warms again.
  */
-export function itemStatus(exposureMs, inZoneNow) {
-  if (exposureMs >= cfg().redExposureMs) return 'critical'
-  if (exposureMs > 0 || inZoneNow) return 'warning'
+export function itemStatus(exposureMs, inZoneNow, spoiledAt = null) {
+  if (spoiledAt || hasSpoiled(exposureMs)) return 'critical'
+  if (inZoneNow) return 'warning'
   return 'safe'
 }
 
@@ -70,7 +77,7 @@ export function continuousZoneMs(readings, now) {
 
 /**
  * Status of the fridge temperature: red after the red-alert time continuously in
- * the zone, yellowish orange before that, green outside it.
+ * the zone, yellow before that, green outside it.
  */
 export function temperatureStatus(tempC, zoneMs = 0) {
   if (tempC == null) return 'unknown'

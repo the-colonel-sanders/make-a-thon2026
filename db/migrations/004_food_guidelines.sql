@@ -4,12 +4,17 @@
 --   chart = 'storage': the Cold Storage Chart (refrigerator 40 °F / freezer 0 °F).
 --   chart = 'cooking': the Safe Minimum Internal Temperature Chart.
 --
--- Idempotent: api/main.py runs every migration at startup. The rows are
--- replaced wholesale each time, so editing this file and restarting the API
--- updates the reference data. Items on the dashboard keep their own copy of
--- the guideline they were logged with, so nothing references these rows.
+-- The "Cut Vegetables" rows at the end of the storage chart come from a
+-- separate refrigerated shelf-life table for cut produce (fridge time only).
+--
+-- Idempotent: api/main.py runs every migration at startup. The table is
+-- rebuilt each time, so editing this file (columns or rows) and restarting the
+-- API updates the reference data. Items on the dashboard keep their own copy of
+-- the guideline they were logged with, so nothing references this table.
 
-CREATE TABLE IF NOT EXISTS food_guidelines (
+DROP TABLE IF EXISTS food_guidelines;
+
+CREATE TABLE food_guidelines (
     code          TEXT PRIMARY KEY,                 -- stable id, e.g. 's-meat-ground'
     chart         TEXT NOT NULL CHECK (chart IN ('storage', 'cooking')),
     sort_order    INT  NOT NULL,                    -- row order within the USDA chart
@@ -26,12 +31,11 @@ CREATE TABLE IF NOT EXISTS food_guidelines (
     rest_minutes  INT,                              -- cooking: rest time after cooking
     cook_note     TEXT,                             -- cooking: doneness test when there is no temperature
     fridge        TEXT,                             -- storage: refrigerator (40 °F) time
-    freezer       TEXT,                             -- storage: freezer (0 °F) time, quality only
-    CHECK (chart <> 'storage' OR (fridge IS NOT NULL AND freezer IS NOT NULL)),
+    freezer       TEXT,                             -- storage: freezer (0 °F) time, quality only (NULL = not listed)
+    note          TEXT,                             -- storage: how to store it
+    CHECK (chart <> 'storage' OR fridge IS NOT NULL),
     CHECK (chart <> 'cooking' OR min_temp_f IS NOT NULL OR cook_note IS NOT NULL)
 );
-
-DELETE FROM food_guidelines;
 
 -- ---------------------------------------------------------------------------
 -- Cold Storage Chart
@@ -281,6 +285,61 @@ VALUES
  'Egg, chicken, ham, macaroni or tuna salad', NULL, '{}',
  '{salad,egg,chicken,ham,macaroni,pasta,tuna,deli,homemade,store}',
  '3–5 days', 'Does not freeze well');
+
+-- Cut Vegetables (refrigerated shelf life; no freezer times listed)
+INSERT INTO food_guidelines
+    (code, chart, sort_order, category, product, description, label, state, foods, keywords, fridge, note)
+VALUES
+('v-leafy-greens', 'storage', 480, 'Cut Vegetables', 'Leafy greens',
+ 'Lettuce, spinach, kale',
+ 'Raw {food} — leafy greens', 'raw', '{lettuce,spinach,kale}',
+ '{leafy,greens,salad,romaine,arugula,chard,collard,mixed,vegetable,veggie,veggies,produce}',
+ '3–5 days', 'Wash and dry thoroughly before storing.'),
+('v-broccoli-cauliflower', 'storage', 490, 'Cut Vegetables', 'Broccoli & cauliflower',
+ 'Broccoli & cauliflower',
+ 'Raw {food}', 'raw', '{broccoli,cauliflower}',
+ '{floret,crown,cut,chopped,vegetable,veggie,veggies,produce}',
+ '3–5 days', 'Store in a loosely sealed container or bag.'),
+('v-carrots', 'storage', 500, 'Cut Vegetables', 'Carrots',
+ 'Sliced or sticks',
+ 'Raw carrots — sliced or sticks', 'raw', '{carrot}',
+ '{sliced,slice,stick,baby,cut,chopped,diced,vegetable,veggie,veggies,produce}',
+ '5–7 days', 'Store in a container with a damp paper towel.'),
+('v-celery', 'storage', 510, 'Cut Vegetables', 'Celery',
+ 'Chopped',
+ 'Raw celery — chopped', 'raw', '{celery}',
+ '{chopped,cut,diced,stick,vegetable,veggie,veggies,produce}',
+ '5–7 days', 'Store in a container with a damp paper towel.'),
+('v-bell-peppers', 'storage', 520, 'Cut Vegetables', 'Bell peppers',
+ 'Sliced',
+ 'Raw bell peppers — sliced', 'raw', '{pepper}',
+ '{bell,capsicum,sliced,slice,cut,chopped,diced,vegetable,veggie,veggies,produce}',
+ '4–6 days', 'Store in a container.'),
+('v-onions', 'storage', 530, 'Cut Vegetables', 'Onions',
+ 'Chopped',
+ 'Raw onions — chopped', 'raw', '{onion}',
+ '{chopped,diced,minced,cut,sliced,vegetable,veggie,veggies,produce}',
+ '7–10 days', 'Store in a sealed container; note that they can impact the flavor of other foods.'),
+('v-cucumbers', 'storage', 540, 'Cut Vegetables', 'Cucumbers',
+ 'Sliced',
+ 'Raw cucumbers — sliced', 'raw', '{cucumber}',
+ '{sliced,slice,cut,chopped,diced,vegetable,veggie,veggies,produce}',
+ '3–5 days', 'Store in a container.'),
+('v-tomatoes', 'storage', 550, 'Cut Vegetables', 'Tomatoes',
+ 'Sliced',
+ 'Raw tomatoes — sliced', 'raw', '{tomato}',
+ '{sliced,slice,cut,chopped,diced,vegetable,veggie,veggies,produce}',
+ '2–4 days', 'Store in a container.'),
+('v-mushrooms', 'storage', 560, 'Cut Vegetables', 'Mushrooms',
+ 'Sliced',
+ 'Raw mushrooms — sliced', 'raw', '{mushroom}',
+ '{sliced,slice,cut,chopped,vegetable,veggie,veggies,produce}',
+ '4–6 days', 'Store in a paper bag.'),
+('v-zucchini-squash', 'storage', 570, 'Cut Vegetables', 'Zucchini / summer squash',
+ 'Sliced',
+ 'Raw zucchini or summer squash — sliced', 'raw', '{zucchini,squash}',
+ '{summer,yellow,courgette,sliced,slice,cut,chopped,diced,vegetable,veggie,veggies,produce}',
+ '3–5 days', 'Store in a container.');
 
 -- ---------------------------------------------------------------------------
 -- Safe Minimum Internal Temperature Chart

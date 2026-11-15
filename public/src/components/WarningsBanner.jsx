@@ -2,8 +2,8 @@ import { dangerRangeLabel, formatDuration, formatThreshold } from '../lib/format
 import { getSettings } from '../lib/settings.js'
 
 /**
- * Summary of items needing attention: red (at or past the red-alert time in
- * the danger zone) first, then yellowish orange (under it).
+ * Summary of items needing attention: red (spoiled) first, then yellow
+ * (in danger: the fridge is in the danger zone right now).
  */
 export function WarningsBanner({ rows, inZoneNow }) {
   const LIMIT = formatThreshold(getSettings().redExposureMs)
@@ -18,10 +18,10 @@ export function WarningsBanner({ rows, inZoneNow }) {
           <span className="banner__icon" aria-hidden="true">✕</span>
           <div>
             <strong>
-              {critical.length} item{critical.length > 1 ? 's have' : ' has'} been in the danger zone
-              for {LIMIT} or more.
+              {critical.length} item{critical.length > 1 ? 's have' : ' has'} spoiled ({LIMIT} or more in
+              the danger zone).
             </strong>
-            <p>Consider discarding: {critical.map((r) => r.item.name).join(', ')}</p>
+            <p>Discard: {critical.map((r) => r.item.name).join(', ')}</p>
           </div>
         </div>
       )}
@@ -32,11 +32,11 @@ export function WarningsBanner({ rows, inZoneNow }) {
             <strong>
               {inZoneNow
                 ? `The fridge is in the danger zone (${dangerRangeLabel()}).`
-                : `Some items have spent under ${LIMIT} in the danger zone.`}
+                : 'Some items are in danger.'}
             </strong>
             {warning.length > 0 && (
               <p>
-                Watch (red at {LIMIT}):{' '}
+                In danger (spoiled at {LIMIT}):{' '}
                 {warning.map((r) => `${r.item.name} (${formatDuration(r.exposureMs)})`).join(', ')}
               </p>
             )}

@@ -88,7 +88,7 @@ export function ItemPage({ itemId, items, now, liveReadings, liveApplianceId, in
     return {
       storedMs: end - placed,
       exposureMs,
-      status: itemStatus(exposureMs, removedAt == null && sameFridge && inZoneNow),
+      status: itemStatus(exposureMs, removedAt == null && sameFridge && inZoneNow, item.spoiled_at),
       min: readings.length ? min : null,
       max: readings.length ? max : null,
       avg: readings.length ? sum / readings.length : null,
@@ -174,9 +174,11 @@ export function ItemPage({ itemId, items, now, liveReadings, liveApplianceId, in
           </div>
         </dl>
         <p className="muted small">
-          {stats.status === 'critical' && `This item has spent ${formatThreshold(getSettings().redExposureMs)} or more at unsafe temperatures. Consider discarding it.`}
-          {stats.status === 'warning' && `Turns red after ${formatThreshold(getSettings().redExposureMs)} in the danger zone.`}
-          {stats.status === 'safe' && 'No time in the danger zone so far.'}
+          {stats.status === 'critical' && `Spoiled: this item has spent ${formatThreshold(getSettings().redExposureMs)} or more at unsafe temperatures. Discard it. It stays marked spoiled even if the fridge cools down.`}
+          {stats.status === 'warning' && `The fridge is in the danger zone now. The item spoils after ${formatThreshold(getSettings().redExposureMs)} in total there.`}
+          {stats.status === 'safe' && (stats.exposureMs > 0
+            ? `Back at a safe temperature. It has spent ${formatDuration(stats.exposureMs)} of ${formatThreshold(getSettings().redExposureMs)} in the danger zone; that time still counts if the fridge warms up again.`
+            : 'No time in the danger zone so far.')}
         </p>
       </section>
 

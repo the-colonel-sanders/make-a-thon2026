@@ -50,6 +50,7 @@ export function useFoodItems() {
         added_by_name: profile?.name ?? null,
         removed_by_name: null,
         guideline,
+        spoiled_at: null, // set once it spoils from danger-zone time; never cleared
       },
     ])
   }, [])
@@ -86,10 +87,19 @@ export function useFoodItems() {
     setItems((prev) => prev.map((it) => (it.added_by_id === profileId ? { ...it, added_by_name: name } : it)))
   }, [])
 
+  /**
+   * Mark items as spoiled (they reached the spoil time in the danger zone).
+   * Permanent: spoiled_at is never cleared, not even by restoring the item.
+   */
+  const markSpoiled = useCallback((ids) => {
+    const at = new Date().toISOString()
+    setItems((prev) => prev.map((it) => (ids.includes(it.id) && !it.spoiled_at ? { ...it, spoiled_at: at } : it)))
+  }, [])
+
   /** Permanently delete every item already marked as removed. */
   const clearRemoved = useCallback(() => {
     setItems((prev) => prev.filter((it) => !it.removed_at))
   }, [])
 
-  return { items, addItem, removeItem, restoreItem, deleteItem, renameItem, renameAddedBy, clearRemoved }
+  return { items, addItem, removeItem, restoreItem, deleteItem, renameItem, renameAddedBy, markSpoiled, clearRemoved }
 }

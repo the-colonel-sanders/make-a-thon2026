@@ -10,7 +10,7 @@ const newId = () => `${Date.now()}-${counter++}`
 
 // Recent notifications are kept in localStorage so they survive a reload.
 const HISTORY_KEY = STORAGE_KEYS.notifications
-const HISTORY_LIMIT = 20
+const HISTORY_LIMIT = 200 // the History page scrolls through all of these
 
 function loadHistory() {
   try {
@@ -30,7 +30,7 @@ function listItems(names) {
 
 /**
  * Food-safety popups for one fridge:
- *  - temperature becomes unsafe         -> yellowish-orange popup
+ *  - temperature becomes unsafe         -> yellow popup
  *  - unsafe for the red-alert time or more -> red "unsafe exposure time" popup
  *  - back to a safe temperature         -> green popup
  * `zoneMs` is how long the fridge has been at an unsafe temperature without a

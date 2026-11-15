@@ -7,8 +7,8 @@
 //   ledTask      - redraws the LEDs every 10 ms (never blocks)
 //   checkinTask  - checks in with the API every 250 ms (locate, history reset,
 //                  thresholds), so dashboard actions reach the LEDs in well under a second
-//   loop()       - samples the sensor every 2 s and uploads readings; a reading
-//                  that crosses into or out of the danger zone is uploaded at once
+//   loop()       - samples the sensor every 1 s and uploads a reading as soon as
+//                  the temperature changes (plus every 30 s as a heartbeat)
 //   displayTask  - redraws the OLED every 250 ms (item, employee, days until spoiled)
 // None of them waits on another, so a slow upload or sensor retry can't delay
 // a Locate/Stop click or a color change.
@@ -20,7 +20,7 @@
 #include <DHT.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+#include <Adafruit_SH110X.h>
 
 // Wi-Fi credentials live in include/secrets.h (git-ignored).
 // Copy include/secrets.example.h to include/secrets.h and fill it in.
@@ -39,8 +39,8 @@ const char *WIFI_PASSWORD = WIFI_PASSWORD_VALUE;
 const char *API_BASE = API_BASE_VALUE;
 
 const int APPLIANCE_ID = 1;                     // must exist in the appliances table
-const unsigned long SAMPLE_INTERVAL_MS = 2000;  // how often the sensor is read (DHT11 minimum ~1 s)
-const unsigned long UPLOAD_INTERVAL_MS = 30000; // regular upload; zone changes upload immediately
+const unsigned long SAMPLE_INTERVAL_MS = 1000;  // how often the sensor is read (DHT11 minimum ~1 s)
+const unsigned long UPLOAD_INTERVAL_MS = 30000; // heartbeat upload; any temperature change uploads immediately
 
 // "Find my device" / reset / thresholds: the ESP32 checks in this often
 // (POST /devices/{id}/checkin, connection kept open so each one is cheap).
@@ -68,18 +68,21 @@ const int LED_YELLOW_PIN = 26;
 const int LED_GREEN_PIN = 27;
 const unsigned long LED_BLINK_MS = 500; // on/off half-period
 
-// OLED: 0.96" 128x64 SSD1306 on I2C. Wiring:
+// OLED: 1.3" 128x64 SH1106 on I2C (Adafruit SH110X library). Wiring:
 //   VCC -> 3.3V, GND -> GND, SDA -> GPIO 21, SCL -> GPIO 22
 // Most of these modules are at address 0x3C; a few are 0x3D (see the address
 // jumper/resistor on the back). Shows the newest item in this fridge (set on
 // the dashboard), who logged it and how many days until it spoils.
 const int OLED_SDA_PIN = 21;
 const int OLED_SCL_PIN = 22;
-const uint8_t OLED_ADDRESS = 0x3C;
+const uint8_t OLED_ADDRESS = 0x3C; // tried first; 0x3D is tried too if nothing answers here
 const int OLED_WIDTH = 128;
 const int OLED_HEIGHT = 64;
 const unsigned long DISPLAY_REFRESH_MS = 250;
-Adafruit_SSD1306 oled(OLED_WIDTH, OLED_HEIGHT, &Wire, -1);
+const unsigned long OLED_CHECK_MS = 5000; // how often to check the OLED still answers (and retry if not)
+Adafruit_SH1106G oled(OLED_WIDTH, OLED_HEIGHT, &Wire, -1);
+uint8_t oledAddress = OLED_ADDRESS; // address actually in use
+bool oledReady = false;             // only touched by setup() and then displayTask
 
 // Danger zone and spoil time. These are only the defaults (same as
 // public/src/config.js); the real values (edited on the Admin page) arrive
@@ -110,6 +113,14 @@ struct DisplayInfo {
   char employee[81] = "";
   bool hasSpoil = false;  // false = item has no USDA fridge storage time
   int64_t spoilAtMs = 0;  // nowMs() when the item spoils
+  // Food safety (same rules as itemStatus() in public/src/lib/safety.js):
+  //   spoiled -> its total danger-zone time reached the spoil time; sticks
+  //              even after the fridge cools down, until the item changes
+  //   danger  -> not spoiled and the fridge is in the danger zone right now
+  //   safe    -> otherwise (danger-zone time so far still counts later)
+  char itemId[65] = "";   // tells a re-added item with the same name from the old one
+  bool spoiled = false;
+  int64_t exposureMs = 0; // danger-zone time so far; counted here while in the zone
 };
 portMUX_TYPE displayMux = portMUX_INITIALIZER_UNLOCKED;
 DisplayInfo displayInfo;
@@ -219,19 +230,33 @@ void applyDisplay(const String &resp) {
   int at = resp.indexOf("\"display_spoil_in_s\":");
   next.hasSpoil = at >= 0 && resp[at + 21] != 'n' && jsonNumber(resp, "display_spoil_in_s", secs);
   if (next.hasSpoil) next.spoilAtMs = nowMs() + (int64_t)(secs * 1000.0);
+  jsonString(resp, "display_item_id", next.itemId, sizeof(next.itemId));
+  next.spoiled = resp.indexOf("\"display_spoiled\":true") >= 0;
+  double exp = 0;
+  if (jsonNumber(resp, "display_exposure_ms", exp) && exp > 0) next.exposureMs = (int64_t)exp;
 
   bool changed;
+  bool becameSpoiled = false;
   portENTER_CRITICAL(&displayMux);
-  changed = strcmp(next.item, displayInfo.item) != 0 || strcmp(next.employee, displayInfo.employee) != 0 ||
-            next.hasSpoil != displayInfo.hasSpoil || !displayInfo.known;
+  bool sameItem = displayInfo.known && strcmp(next.item, displayInfo.item) == 0 &&
+                  strcmp(next.itemId, displayInfo.itemId) == 0;
+  if (sameItem) {
+    // Same item: spoiled never goes back, and this device's own exposure count
+    // is usually ahead of the dashboard's last update, so keep the larger one.
+    // (An erased history arrives as 0 and is applied in checkIn().)
+    becameSpoiled = next.spoiled && !displayInfo.spoiled;
+    next.spoiled = next.spoiled || displayInfo.spoiled;
+    next.exposureMs = max(next.exposureMs, displayInfo.exposureMs);
+  }
+  changed = !sameItem || strcmp(next.employee, displayInfo.employee) != 0 || next.hasSpoil != displayInfo.hasSpoil;
   // Network delay shifts each estimate a little; only move the deadline for a
   // real change (e.g. the item was removed and added again) so the seconds
   // don't jitter.
-  if (changed || llabs(next.spoilAtMs - displayInfo.spoilAtMs) > 2000) {
-    displayInfo = next;
-    changed = true;
-  }
+  if (!changed && llabs(next.spoilAtMs - displayInfo.spoilAtMs) <= 2000) next.spoilAtMs = displayInfo.spoilAtMs;
+  else changed = true;
+  displayInfo = next;
   portEXIT_CRITICAL(&displayMux);
+  if (becameSpoiled) Serial.printf("Display: \"%s\" marked spoiled by the dashboard\n", next.item);
   if (changed) {
     if (next.item[0] == '\0') Serial.println("Display: no item");
     else if (next.hasSpoil)
@@ -298,6 +323,11 @@ bool checkIn(HTTPClient &http) {
     portENTER_CRITICAL(&stateMux);
     dangerStartMs = millis();
     portEXIT_CRITICAL(&stateMux);
+    // The erased readings were the item's danger-zone time as well (a spoiled
+    // item stays spoiled, like on the website).
+    portENTER_CRITICAL(&displayMux);
+    displayInfo.exposureMs = 0;
+    portEXIT_CRITICAL(&displayMux);
     historyResetRequested = true;
     Serial.println("History reset from the dashboard: danger-zone timer restarted");
   }
@@ -354,23 +384,72 @@ void printCentered(const char *text, int y, uint8_t size) {
   oled.print(text);
 }
 
+// Battery level shown in the corner, 0-100. Placeholder until battery
+// monitoring is added: replace the body with a real reading (e.g. an ADC
+// voltage divider on the battery) and the icon follows it.
+const int BATTERY_PLACEHOLDER_PERCENT = 100;
+int batteryPercent() { return BATTERY_PLACEHOLDER_PERCENT; }
+
+// Battery icon (16x8 body + 2 px terminal) with a fill meter and "NN%" to its
+// left, in the bottom-right corner (rows 56-63, x 92-127).
+const int BATTERY_AREA_X = 92; // text to the left must end before this
+void drawBattery(int percent) {
+  percent = constrain(percent, 0, 100);
+  const int bx = 109, by = 56, bw = 16, bh = 8;
+  oled.drawRect(bx, by, bw, bh, SH110X_WHITE);             // body
+  oled.fillRect(bx + bw, by + 2, 2, bh - 4, SH110X_WHITE); // terminal
+  int fill = (bw - 4) * percent / 100;                      // meter, 1 px gap inside the outline
+  if (fill > 0) oled.fillRect(bx + 2, by + 2, fill, bh - 4, SH110X_WHITE);
+
+  char pct[6];
+  snprintf(pct, sizeof(pct), "%d%%", percent);
+  oled.setTextSize(1);
+  oled.setCursor(bx - 2 - 6 * (int)strlen(pct), by);
+  oled.print(pct);
+}
+
 // Layout (size-1 text is 6x8 px, 21 characters per line):
-//   rows  0-15  item name (up to two lines)
-//   rows 19-34  days left, large ("3 DAYS" / "SPOILED")
-//   rows 38-45  exact time left, e.g. "2d 13:05:22 left"
-//   rows 56-63  employee who logged it
-void drawDisplay(const DisplayInfo &d) {
+//   rows  3-18  item name (up to two lines; lowered 3 px because the
+//               SH1106 panel crops its top rows)
+//   rows 19-34  days left, large ("3 DAYS"), or "SPOILED" once it has spoiled
+//   rows 37-46  status tag + exact time left: "[DANGER] 2d 13:05:22" (inverted
+//               tag while the fridge is in the danger zone) or "SAFE 2d 13:05:22";
+//               once spoiled, why ("Unsafe temp too long" / "Past storage time")
+//   rows 56-63  employee who logged it (left), battery (right)
+// The days-left countdown comes from the USDA storage time and keeps running
+// through danger spells: only spoiling replaces it.
+const int ITEM_TOP_Y = 3; // raise/lower the item name here
+
+// "SAFE" or an inverted "DANGER" tag followed by `text`, centered at row y.
+void drawStatusLine(bool danger, const char *text, int y) {
+  const char *tag = danger ? "DANGER" : "SAFE";
+  int tagW = 6 * (int)strlen(tag) + 4;
+  int totalW = tagW + 4 + 6 * (int)strlen(text);
+  int x = max(0, (OLED_WIDTH - totalW) / 2);
+  oled.setTextSize(1);
+  if (danger) {
+    oled.fillRect(x, y - 1, tagW, 10, SH110X_WHITE);
+    oled.setTextColor(SH110X_BLACK);
+  }
+  oled.setCursor(x + 2, y + 1);
+  oled.print(tag);
+  oled.setTextColor(SH110X_WHITE);
+  oled.setCursor(x + tagW + 4, y + 1);
+  oled.print(text);
+}
+
+void drawDisplay(const DisplayInfo &d, bool inZone) {
   oled.clearDisplay();
-  oled.setTextColor(SSD1306_WHITE);
+  oled.setTextColor(SH110X_WHITE);
   oled.setTextWrap(false);
 
   if (!d.known) {
     printCentered("Fridge monitor", 12, 1);
-    printCentered(WiFi.status() == WL_CONNECTED ? "Contacting API..." : "Connecting Wi-Fi...", 36, 1);
+    printCentered(WiFi.status() == WL_CONNECTED ? "Contacting API..." : "Connecting Wi-Fi...", 32, 1);
   } else if (d.item[0] == '\0') {
-    printCentered("No item", 14, 2);
-    printCentered("Add one on the", 40, 1);
-    printCentered("dashboard", 50, 1);
+    printCentered("No item", 10, 2);
+    printCentered("Add one on the", 32, 1);
+    printCentered("dashboard", 42, 1);
   } else {
     // Item name: two lines of 21 characters, "..." if it's longer.
     char line[22];
@@ -378,53 +457,182 @@ void drawDisplay(const DisplayInfo &d) {
     oled.setTextSize(1);
     strncpy(line, d.item, 21);
     line[21] = '\0';
-    oled.setCursor(0, 0);
+    oled.setCursor(0, ITEM_TOP_Y);
     oled.print(line);
     if (len > 21) {
       strncpy(line, d.item + 21, 21);
       line[21] = '\0';
       if (len > 42) strcpy(line + 18, "...");
-      oled.setCursor(0, 8);
+      oled.setCursor(0, ITEM_TOP_Y + 8);
       oled.print(line);
     }
 
-    char big[16], small[24];
-    if (!d.hasSpoil) {
-      strcpy(big, "-- DAYS");
-      strcpy(small, "No USDA fridge time");
+    int64_t left = d.hasSpoil ? d.spoilAtMs - nowMs() : 1;
+    if (d.spoiled) {
+      // Spent the spoil time in the danger zone: stays spoiled even if the fridge cools down.
+      printCentered("SPOILED", 19, 2);
+      printCentered("Unsafe temp too long", 38, 1);
+    } else if (left <= 0) {
+      printCentered("SPOILED", 19, 2);
+      printCentered("Past storage time", 38, 1);
+    } else if (!d.hasSpoil) {
+      printCentered("-- DAYS", 19, 2);
+      drawStatusLine(inZone, "no USDA time", 37);
     } else {
-      int64_t left = d.spoilAtMs - nowMs();
-      if (left <= 0) {
-        strcpy(big, "SPOILED");
-        strcpy(small, "Throw it out");
-      } else {
-        long secs = (long)((left + 999) / 1000);
-        long days = (secs + 86399) / 86400; // whole days, rounded up
-        snprintf(big, sizeof(big), "%ld DAY%s", days, days == 1 ? "" : "S");
-        snprintf(small, sizeof(small), "%ldd %02ld:%02ld:%02ld left", secs / 86400, (secs / 3600) % 24,
-                 (secs / 60) % 60, secs % 60);
-      }
+      char big[16], small[24];
+      long secs = (long)((left + 999) / 1000);
+      long days = (secs + 86399) / 86400; // whole days, rounded up
+      snprintf(big, sizeof(big), "%ld DAY%s", days, days == 1 ? "" : "S");
+      snprintf(small, sizeof(small), "%ldd %02ld:%02ld:%02ld", secs / 86400, (secs / 3600) % 24,
+               (secs / 60) % 60, secs % 60);
+      printCentered(big, 19, 2);
+      drawStatusLine(inZone, small, 37);
     }
-    printCentered(big, 19, 2);
-    printCentered(small, 38, 1);
 
-    oled.drawFastHLine(0, 51, OLED_WIDTH, SSD1306_WHITE);
+    oled.drawFastHLine(0, 51, OLED_WIDTH, SH110X_WHITE);
+    // Employee name, cut to fit left of the battery (15 characters).
+    const size_t maxChars = (BATTERY_AREA_X - 2) / 6;
     snprintf(line, sizeof(line), "By %s", d.employee[0] ? d.employee : "-");
+    if (strlen(line) > maxChars) strcpy(line + maxChars - 2, "..");
     oled.setTextSize(1);
     oled.setCursor(0, 56);
     oled.print(line);
   }
+  drawBattery(batteryPercent());
   oled.display();
 }
 
 // Same priority as loop() and below ledTask, so I2C transfers never hold up the LEDs.
+// ---- OLED debugging (all messages go to the serial monitor) ----
+
+// What Wire.endTransmission()'s result means.
+const char *i2cErrorText(uint8_t err) {
+  switch (err) {
+    case 0: return "ok";
+    case 1: return "data too long";
+    case 2: return "no answer at that address (NACK)";
+    case 3: return "data not acknowledged";
+    case 5: return "bus timeout (SDA/SCL stuck or no pull-ups)";
+    default: return "bus error";
+  }
+}
+
+// Does a device answer at this I2C address? 0 = yes, otherwise the error code.
+uint8_t i2cProbe(uint8_t addr) {
+  Wire.beginTransmission(addr);
+  return Wire.endTransmission();
+}
+
+// List every device on the bus, so a wrong address or dead wiring is obvious.
+void i2cScan() {
+  Serial.printf("I2C scan (SDA=GPIO %d, SCL=GPIO %d):", OLED_SDA_PIN, OLED_SCL_PIN);
+  int found = 0;
+  for (uint8_t addr = 1; addr < 127; addr++) {
+    if (i2cProbe(addr) == 0) {
+      Serial.printf(" 0x%02X", addr);
+      found++;
+    }
+  }
+  if (found) Serial.printf("  (%d device%s)\n", found, found == 1 ? "" : "s");
+  else Serial.println(" nothing found -> check OLED VCC/GND, and that SDA/SCL aren't swapped");
+}
+
+// Find the OLED (configured address first, then the other common one) and
+// initialize it. `verbose` prints the full diagnosis; retries stay quieter.
+bool oledInit(bool verbose) {
+  const uint8_t candidates[] = {OLED_ADDRESS, (uint8_t)(OLED_ADDRESS == 0x3C ? 0x3D : 0x3C)};
+  for (uint8_t addr : candidates) {
+    uint8_t err = i2cProbe(addr);
+    if (err != 0) {
+      if (verbose) Serial.printf("OLED: 0x%02X -> %s\n", addr, i2cErrorText(err));
+      continue;
+    }
+    if (addr != OLED_ADDRESS) {
+      Serial.printf("OLED: found at 0x%02X instead of 0x%02X (set OLED_ADDRESS to 0x%02X)\n", addr, OLED_ADDRESS,
+                    addr);
+    }
+    if (!oled.begin(addr, true)) {
+      // Fails if the frame buffer can't be allocated or the init commands aren't acknowledged.
+      Serial.printf("OLED: answered at 0x%02X but init failed (frame buffer or I2C error)\n", addr);
+      return false;
+    }
+    oled.setRotation(0);
+    oled.clearDisplay();
+    oled.display();
+    oledAddress = addr;
+    Serial.printf("OLED: ready at 0x%02X (%dx%d SH1106)\n", addr, OLED_WIDTH, OLED_HEIGHT);
+    if (verbose) {
+      Serial.println("OLED: if it still shows nothing or garbage, the module may be an SSD1306 after all");
+      Serial.println("      (usually 0.96\" boards), or a 128x32 panel: change the driver/size above");
+    }
+    return true;
+  }
+  if (verbose) {
+    Serial.println("OLED: not found. Check wiring: VCC->3.3V, GND->GND, SDA->GPIO 21, SCL->GPIO 22.");
+    Serial.printf("OLED: will keep retrying every %lu s\n", OLED_CHECK_MS / 1000);
+  }
+  return false;
+}
+
+// Draws every 250 ms. Every 5 s it checks the OLED still answers: a loose wire
+// or power blip is reported once, and the screen is re-initialized when it's back.
+// It also counts the item's danger-zone time while the fridge is in the zone,
+// so the item turns SPOILED on time even between dashboard updates (or with
+// the dashboard closed).
 void displayTask(void *) {
+  unsigned long lastCheck = millis();
+  unsigned long retries = 0;
+  int64_t lastTick = nowMs();
   for (;;) {
-    DisplayInfo d;
+    portENTER_CRITICAL(&stateMux);
+    bool inZone = inDangerZone;
+    unsigned long spoilMs = dangerAlertMs;
+    portEXIT_CRITICAL(&stateMux);
+    int64_t t = nowMs();
+    int64_t dt = t - lastTick;
+    lastTick = t;
+    bool justSpoiled = false;
+    char spoiledName[81] = "";
     portENTER_CRITICAL(&displayMux);
-    d = displayInfo;
+    if (inZone && displayInfo.known && displayInfo.item[0] && !displayInfo.spoiled) {
+      displayInfo.exposureMs += dt;
+      if (displayInfo.exposureMs >= (int64_t)spoilMs) {
+        displayInfo.spoiled = true; // sticks until a different item is shown
+        justSpoiled = true;
+        strcpy(spoiledName, displayInfo.item);
+      }
+    }
     portEXIT_CRITICAL(&displayMux);
-    drawDisplay(d);
+    if (justSpoiled) Serial.printf("Display: \"%s\" spoiled (%lu s in the danger zone)\n", spoiledName, spoilMs / 1000);
+
+    if (millis() - lastCheck >= OLED_CHECK_MS) {
+      lastCheck = millis();
+      if (oledReady) {
+        uint8_t err = i2cProbe(oledAddress);
+        if (err != 0) {
+          oledReady = false;
+          retries = 0;
+          Serial.printf("OLED: stopped responding at 0x%02X (%s), check its wires\n", oledAddress, i2cErrorText(err));
+        }
+      } else {
+        retries++;
+        if (oledInit(false)) {
+          oledReady = true;
+          Serial.println("OLED: back online");
+        } else if (retries % 12 == 0) {
+          Serial.printf("OLED: still not found after %lu s, scanning bus again\n", retries * OLED_CHECK_MS / 1000);
+          i2cScan();
+        }
+      }
+    }
+
+    if (oledReady) {
+      DisplayInfo d;
+      portENTER_CRITICAL(&displayMux);
+      d = displayInfo;
+      portEXIT_CRITICAL(&displayMux);
+      drawDisplay(d, inZone);
+    }
     vTaskDelay(pdMS_TO_TICKS(DISPLAY_REFRESH_MS));
   }
 }
@@ -445,6 +653,7 @@ int queueCount = 0;
 unsigned long lastSampleMs = 0;
 unsigned long lastUploadMs = 0;
 unsigned long lastWifiAttemptMs = 0;
+float lastUploadedC = NAN; // temperature in the last uploaded reading
 
 float readTemperatureC() {
   // The DHT11 occasionally returns a bad read; retry a few times
@@ -530,6 +739,23 @@ void connectWiFiBlocking() {
     Serial.printf("\nWiFi connected, IP: %s\n", WiFi.localIP().toString().c_str());
   } else {
     Serial.println("\nWiFi connection failed, will keep retrying in the background");
+    // The ESP32 only has a 2.4 GHz radio: say whether the network is even visible.
+    int n = WiFi.scanNetworks();
+    bool seen = false;
+    for (int i = 0; i < n; i++) {
+      if (WiFi.SSID(i) == WIFI_SSID) {
+        seen = true;
+        Serial.printf("  \"%s\" is visible: channel %d, signal %d dBm, security type %d -> check the password\n",
+                      WIFI_SSID, (int)WiFi.channel(i), (int)WiFi.RSSI(i), (int)WiFi.encryptionType(i));
+      }
+    }
+    if (!seen) {
+      Serial.printf("  \"%s\" not found among %d 2.4 GHz networks. The ESP32 can't use 5 GHz:\n"
+                    "  set the hotspot/router to 2.4 GHz (phone hotspot: turn on 'Extend compatibility').\n",
+                    WIFI_SSID, n);
+    }
+    WiFi.scanDelete();
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD); // scanning interrupts the connect attempt; restart it
   }
 }
 
@@ -547,12 +773,11 @@ void setup() {
   // OLED stays on for as long as the device is powered.
   Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
   Wire.setClock(400000);
-  if (oled.begin(SSD1306_SWITCHCAPVCC, OLED_ADDRESS)) {
-    xTaskCreatePinnedToCore(displayTask, "oled", 4096, nullptr, 1, nullptr, 1);
-  } else {
-    Serial.printf("OLED not found at 0x%02X (check SDA=GPIO %d, SCL=GPIO %d, or try 0x3D)\n", OLED_ADDRESS,
-                  OLED_SDA_PIN, OLED_SCL_PIN);
-  }
+  i2cScan();
+  oledReady = oledInit(false);
+  // Started even if the OLED is missing, so it keeps retrying (a loose wire
+  // fixed later comes up without a reboot).
+  xTaskCreatePinnedToCore(displayTask, "oled", 4096, nullptr, 1, nullptr, 1);
 
   // Wiring check: weakly pull the pin LOW with the ESP32's internal pull-down
   // (~45k). A powered sensor's 10k pull-up is stronger, so the line still reads
@@ -582,10 +807,13 @@ void setup() {
 void loop() {
   // Non-blocking reconnect: the sensor keeps being sampled (and the LEDs kept
   // current) while Wi-Fi is down.
-  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiAttemptMs > 10000) {
+  // Restart the attempt from scratch (WiFi.reconnect() errors with "sta is
+  // connecting" while a previous attempt is still pending).
+  if (WiFi.status() != WL_CONNECTED && millis() - lastWifiAttemptMs > 20000) {
     lastWifiAttemptMs = millis();
     Serial.println("WiFi down, reconnecting");
-    WiFi.reconnect();
+    WiFi.disconnect();
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   }
 
   bool resetNow = historyResetRequested;
@@ -616,10 +844,14 @@ void loop() {
   unsigned long inZoneMs = millis() - dangerStartMs;
   portEXIT_CRITICAL(&stateMux);
 
-  // Upload on schedule, and immediately when the zone changes or after a
-  // reset, so the website switches color at the same moment as the LEDs.
-  if (zoneChanged || resetNow || millis() - lastUploadMs >= UPLOAD_INTERVAL_MS) {
+  // Upload as soon as the temperature (or zone) changes, after a reset, and
+  // every 30 s regardless, so the website shows a new temperature within ~1 s
+  // of the sensor. A reading counts until the next one, so skipping unchanged
+  // readings doesn't change the danger-zone timing on the website.
+  bool tempChanged = isnan(lastUploadedC) || fabsf(tempC - lastUploadedC) >= 0.05f;
+  if (tempChanged || zoneChanged || resetNow || millis() - lastUploadMs >= UPLOAD_INTERVAL_MS) {
     lastUploadMs = millis();
+    lastUploadedC = tempC;
     Reading r = {time(nullptr), tempC};
     char ts[25];
     formatIso8601(r.timestamp, ts, sizeof(ts));
