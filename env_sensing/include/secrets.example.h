@@ -4,3 +4,6 @@
 
 #define WIFI_SSID_VALUE "your-wifi-name"
 #define WIFI_PASSWORD_VALUE "your-wifi-password"
+
+// LAN address of the computer running the API (no trailing slash).
+#define API_BASE_VALUE "http://your-ip-address:8000"
