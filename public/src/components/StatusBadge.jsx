@@ -7,12 +7,17 @@ const LABELS = {
   offline: { icon: '⏻', text: 'Device off' },
 }
 
-export function StatusBadge({ status, label }) {
+/** `simulated` marks a status forced on the Admin page, so it's never mistaken for a real reading. */
+export function StatusBadge({ status, label, simulated = false }) {
   const { icon, text } = LABELS[status] ?? LABELS.unknown
   return (
-    <span className={`badge badge--${status}`}>
+    <span
+      className={`badge badge--${status}${simulated ? ' badge--simulated' : ''}`}
+      title={simulated ? 'Simulated on the Admin page, not from the sensor' : undefined}
+    >
       <span className="badge__icon" aria-hidden="true">{icon}</span>
       {label ?? text}
+      {simulated && <span className="badge__sim">sim</span>}
     </span>
   )
 }

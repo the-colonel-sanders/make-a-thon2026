@@ -88,7 +88,9 @@ export function ItemPage({ itemId, items, now, liveReadings, liveApplianceId, in
     return {
       storedMs: end - placed,
       exposureMs,
-      status: itemStatus(exposureMs, removedAt == null && sameFridge && inZoneNow, item.spoiled_at),
+      status: itemStatus(
+        exposureMs, removedAt == null && sameFridge && inZoneNow, item.spoiled_at, item.simulated_status,
+      ),
       min: readings.length ? min : null,
       max: readings.length ? max : null,
       avg: readings.length ? sum / readings.length : null,
@@ -161,7 +163,7 @@ export function ItemPage({ itemId, items, now, liveReadings, liveApplianceId, in
       <section className={`card item-summary item-summary--${stats.status}`} aria-label="Item summary">
         <div className="card__head">
           <h2 className="card__title">Food safety</h2>
-          <StatusBadge status={stats.status} />
+          <StatusBadge status={stats.status} simulated={Boolean(item.simulated_status)} />
         </div>
         <dl className="stats stats--row">
           <div><dt>Placed</dt><dd>{formatDateTime(placed)}</dd></div>

@@ -32,14 +32,18 @@ function displayFor(items, applianceId, exposures) {
     .sort((a, b) => Date.parse(b.placed_at) - Date.parse(a.placed_at))[0]
   if (!current) return { item_name: null, employee_name: null, spoil_at: null, item_id: null, spoiled: false, exposure_ms: 0 }
   const days = shelfLifeDays(current.guideline)
+  // A status simulated on the Admin page is sent under its own item id. The
+  // device keeps "spoiled" for the same id forever, so this way going back to
+  // the sensor (the plain id again) starts the OLED fresh from the real state.
+  const sim = current.simulated_status ?? null
   return {
     item_name: current.name,
     employee_name: current.added_by_name ?? null,
     // From the time it was placed, so removing and re-adding restarts the countdown.
     spoil_at: days == null ? null : new Date(Date.parse(current.placed_at) + days * DAY_MS).toISOString(),
-    item_id: String(current.id).slice(0, 64),
-    spoiled: Boolean(current.spoiled_at),
-    exposure_ms: Math.round(exposures.get(current.id) ?? 0),
+    item_id: String(current.id).slice(0, 48) + (sim ? `~sim-${sim}` : ''),
+    spoiled: sim ? sim === 'critical' : Boolean(current.spoiled_at),
+    exposure_ms: sim ? 0 : Math.round(exposures.get(current.id) ?? 0),
   }
 }
 

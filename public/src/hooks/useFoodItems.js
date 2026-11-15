@@ -96,10 +96,33 @@ export function useFoodItems() {
     setItems((prev) => prev.map((it) => (ids.includes(it.id) && !it.spoiled_at ? { ...it, spoiled_at: at } : it)))
   }, [])
 
+  /**
+   * Force an item's safety status for testing/demos ('safe' | 'warning' |
+   * 'critical'), or null to go back to the status worked out from the sensor.
+   * Display only: it never touches spoiled_at or the danger-zone time.
+   */
+  const simulateStatus = useCallback((id, status) => {
+    setItems((prev) => prev.map((it) => (it.id === id ? { ...it, simulated_status: status ?? null } : it)))
+  }, [])
+
+  /** Put every simulated item (optionally only in one appliance) back on the sensor. */
+  const clearSimulations = useCallback((applianceId = null) => {
+    setItems((prev) =>
+      prev.map((it) =>
+        it.simulated_status && (applianceId == null || it.appliance_id === applianceId)
+          ? { ...it, simulated_status: null }
+          : it,
+      ),
+    )
+  }, [])
+
   /** Permanently delete every item already marked as removed. */
   const clearRemoved = useCallback(() => {
     setItems((prev) => prev.filter((it) => !it.removed_at))
   }, [])
 
-  return { items, addItem, removeItem, restoreItem, deleteItem, renameItem, renameAddedBy, markSpoiled, clearRemoved }
+  return {
+    items, addItem, removeItem, restoreItem, deleteItem, renameItem, renameAddedBy, markSpoiled,
+    simulateStatus, clearSimulations, clearRemoved,
+  }
 }

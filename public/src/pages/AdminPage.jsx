@@ -3,6 +3,8 @@ import { syncThresholds } from '../hooks/useServerThresholds.js'
 import { deleteReadings, saveThresholds } from '../lib/api.js'
 import { cToF, fToC, formatThreshold } from '../lib/format.js'
 import { DEFAULT_SETTINGS, updateSettings, useSettings } from '../lib/settings.js'
+import { itemStatus } from '../lib/safety.js'
+import { StatusBadge } from '../components/StatusBadge.jsx'
 
 // The admin page always works in °F. Settings store °C (like the sensor and
 // database), so values are converted on the way in and out.
@@ -42,7 +44,7 @@ function validate(form) {
 }
 
 /** Admin controls for the food-safety danger zone and the spoil time. */
-export function AdminPage({ applianceId, applianceIds = [], onHistoryReset }) {
+export function AdminPage({ applianceId, applianceIds = [], onHistoryReset, foodItems, exposures, inZoneNow = false }) {
   const settings = useSettings()
   const [form, setForm] = useState(() => toForm(settings))
   const [error, setError] = useState(null)
@@ -193,8 +195,96 @@ export function AdminPage({ applianceId, applianceIds = [], onHistoryReset }) {
         </p>
       </section>
 
+      {foodItems && (
+        <SimulateStatuses
+          applianceId={applianceId}
+          foodItems={foodItems}
+          exposures={exposures}
+          inZoneNow={inZoneNow}
+        />
+      )}
+
       <ResetHistory applianceId={applianceId} applianceIds={applianceIds} onReset={onHistoryReset} />
     </>
+  )
+}
+
+const SIM_OPTIONS = [
+  { id: null, label: 'Sensor' },
+  { id: 'safe', label: 'Safe' },
+  { id: 'warning', label: 'Danger' },
+  { id: 'critical', label: 'Spoiled' },
+]
+
+/**
+ * Force the safety status of individual items (for testing and demos), and put
+ * them back on the sensor. A simulated status shows everywhere the real one
+ * would (dashboard, item page, warnings, the fridge's OLED), marked "sim".
+ * It never marks the item spoiled for real, so "Sensor" restores the real status.
+ */
+function SimulateStatuses({ applianceId, foodItems, exposures, inZoneNow }) {
+  const { items, simulateStatus, clearSimulations } = foodItems
+  const inFridge = items
+    .filter((it) => it.appliance_id === applianceId && !it.removed_at)
+    .sort((a, b) => Date.parse(b.placed_at) - Date.parse(a.placed_at))
+  const simulatedCount = inFridge.filter((it) => it.simulated_status).length
+
+  return (
+    <section className="card admin" aria-labelledby="admin-simulate">
+      <div className="card__head">
+        <h2 id="admin-simulate" className="card__title">
+          Simulate item safety {simulatedCount > 0 && <span className="count">{simulatedCount} simulated</span>}
+        </h2>
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          onClick={() => clearSimulations(applianceId)}
+          disabled={simulatedCount === 0}
+        >
+          Reset all to sensor
+        </button>
+      </div>
+      <p className="muted small">
+        Override an item’s status in fridge #{applianceId} without changing the temperature. Simulated
+        statuses are marked “sim” on the dashboard and are saved in this browser only. Choose “Sensor” to go
+        back to the status worked out from the readings.
+      </p>
+
+      {inFridge.length === 0 ? (
+        <p className="empty">No items in fridge #{applianceId}. Add some on the Home page.</p>
+      ) : (
+        <ul className="sim-list">
+          {inFridge.map((item) => {
+            const real = itemStatus(exposures?.get(item.id) ?? 0, inZoneNow, item.spoiled_at)
+            const current = item.simulated_status ?? null
+            return (
+              <li key={item.id} className={`sim-list__row${current ? ' is-simulated' : ''}`}>
+                <div className="sim-list__item">
+                  <a href={`#/item/${encodeURIComponent(item.id)}`}>{item.name}</a>
+                  <span className="muted small">
+                    Sensor says <StatusBadge status={real} />
+                  </span>
+                </div>
+                <div className="segmented segmented--sm" role="radiogroup" aria-label={`Status for ${item.name}`}>
+                  {SIM_OPTIONS.map((o) => (
+                    <button
+                      key={o.label}
+                      type="button"
+                      role="radio"
+                      aria-checked={current === o.id}
+                      className={`segmented__btn${current === o.id ? ' is-active' : ''}${o.id ? ` segmented__btn--${o.id}` : ''}`}
+                      onClick={() => simulateStatus(item.id, o.id)}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+    </section>
   )
 }
 

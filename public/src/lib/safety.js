@@ -49,6 +49,9 @@ export function dangerExposureMs(item, intervals, now) {
 /** True once an item has spent the red-alert time (in total) in the danger zone. */
 export const hasSpoiled = (exposureMs) => exposureMs >= cfg().redExposureMs
 
+/** Statuses the Admin page can force on an item (`item.simulated_status`). */
+export const SIMULATED_STATUSES = ['safe', 'warning', 'critical']
+
 /**
  * 'safe' | 'warning' | 'critical' for an item.
  *  - critical (red, "Spoiled"): total exposure reached the red-alert time, or
@@ -57,8 +60,11 @@ export const hasSpoiled = (exposureMs) => exposureMs >= cfg().redExposureMs
  *  - warning (yellow, "Danger"): only while the fridge is in the zone right now.
  *  - safe: otherwise, including after a danger spell that didn't spoil it.
  *    Its exposure so far still counts toward spoiling if the fridge warms again.
+ * `simulated` (set on the Admin page) overrides all of this until it's reset
+ * to the sensor; it never sets `spoiledAt`, so resetting restores the real status.
  */
-export function itemStatus(exposureMs, inZoneNow, spoiledAt = null) {
+export function itemStatus(exposureMs, inZoneNow, spoiledAt = null, simulated = null) {
+  if (SIMULATED_STATUSES.includes(simulated)) return simulated
   if (spoiledAt || hasSpoiled(exposureMs)) return 'critical'
   if (inZoneNow) return 'warning'
   return 'safe'

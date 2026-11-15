@@ -118,6 +118,9 @@ export default function App() {
             applianceId={applianceId}
             applianceIds={backend.applianceIds}
             onHistoryReset={backend.refresh}
+            foodItems={foodItems}
+            exposures={exposures}
+            inZoneNow={inZoneNow}
           />
         ) : route === '/settings' ? (
           <SettingsPage

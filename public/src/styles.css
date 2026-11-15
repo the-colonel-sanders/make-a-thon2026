@@ -370,6 +370,20 @@ a.btn { display: inline-block; text-decoration: none; }
 .admin__row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 @media (max-width: 640px) { .admin__row { grid-template-columns: 1fr; } }
 .admin__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+/* Simulate item safety (Admin page) */
+.sim-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.sim-list__row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; padding: 10px 0; border-top: 1px solid var(--grid); }
+.sim-list__row:first-child { border-top: none; }
+.sim-list__row.is-simulated { box-shadow: inset 3px 0 0 var(--accent); padding-left: 10px; }
+.sim-list__item { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.sim-list__item a { color: var(--ink); font-weight: 600; text-decoration: none; overflow-wrap: anywhere; }
+.sim-list__item a:hover { color: var(--accent); }
+.segmented--sm .segmented__btn { padding: 5px 10px; font-size: 0.82rem; }
+.segmented__btn--safe.is-active { color: var(--good-text); }
+.segmented__btn--warning.is-active { color: var(--warn-text); }
+.segmented__btn--critical.is-active { color: var(--crit-text); }
+.badge--simulated { outline: 1px dashed currentColor; outline-offset: 1px; }
+.badge__sim { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.8; }
 .admin__saved { color: var(--good-text); font-size: 0.85rem; font-weight: 600; }
 
 /* ---------- Settings page ---------- */

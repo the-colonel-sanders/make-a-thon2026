@@ -74,7 +74,7 @@ export function ItemTable({ rows, now, removed = false, onRemove, onRestore, onD
                     <span style={{ width: `${pct}%` }} />
                   </span>
                 </td>
-                <td data-label="Status"><StatusBadge status={status} /></td>
+                <td data-label="Status"><StatusBadge status={status} simulated={Boolean(item.simulated_status)} /></td>
                 <td className="items__actions">
                   <a className="btn btn--ghost btn--sm" href={itemHref(item.id)}>Inspect</a>
                   {onRename && renamingId !== item.id && (

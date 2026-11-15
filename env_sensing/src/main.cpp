@@ -556,6 +556,21 @@ bool oledInit(bool verbose) {
       Serial.printf("OLED: answered at 0x%02X but init failed (frame buffer or I2C error)\n", addr);
       return false;
     }
+    // Many "1.3 inch SH1106" modules actually carry an SSD1306. The SH1106 init
+    // never enables the SSD1306's charge pump, so the panel stays dark even
+    // though every I2C write is acknowledged. Send the SSD1306 commands too:
+    //   0x8D 0x14 = charge pump on, 0x20 0x02 = page addressing (what display() uses)
+    // A real SH1106 ignores them (they decode as column-address bytes that
+    // display() overwrites on every page).
+    Wire.beginTransmission(addr);
+    Wire.write(0x00); // command stream
+    Wire.write(0x8D);
+    Wire.write(0x14);
+    Wire.write(0x20);
+    Wire.write(0x02);
+    Wire.write(0xAF); // display on (again, after the charge pump is up)
+    uint8_t cpErr = Wire.endTransmission();
+    if (verbose && cpErr != 0) Serial.printf("OLED: SSD1306 charge-pump command failed (%s)\n", i2cErrorText(cpErr));
     oled.setRotation(0);
     oled.clearDisplay();
     oled.display();
@@ -774,7 +789,7 @@ void setup() {
   Wire.begin(OLED_SDA_PIN, OLED_SCL_PIN);
   Wire.setClock(400000);
   i2cScan();
-  oledReady = oledInit(false);
+  oledReady = oledInit(true);
   // Started even if the OLED is missing, so it keeps retrying (a loose wire
   // fixed later comes up without a reboot).
   xTaskCreatePinnedToCore(displayTask, "oled", 4096, nullptr, 1, nullptr, 1);

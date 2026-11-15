@@ -47,10 +47,10 @@ export function AddItemForm({ onAdd, profile }) {
   }, [index, name])
 
   const query = name.trim()
-  const showList = open && query.length > 0 && !(selected && selected.label === name)
+  const showList = open && query.length > 0 && !(selected && selected.name === name)
 
   const choose = (opt) => {
-    setName(opt.label)
+    setName(opt.name) // the chart's description stays on the attached guideline
     setSelected(opt)
     setOpen(false)
     setActive(-1)
@@ -81,7 +81,7 @@ export function AddItemForm({ onAdd, profile }) {
     if (!profile) return setError('Choose or add your profile at the top of the page first.')
     const trimmed = name.trim()
     if (!trimmed) return setError('Enter an item name.')
-    const guideline = selected && selected.label === name ? snapshot(selected) : null
+    const guideline = selected && selected.name === name ? snapshot(selected) : null
     onAdd({ name: trimmed, placedAt: Date.now(), guideline })
     setName('')
     setSelected(null)
@@ -165,7 +165,7 @@ export function AddItemForm({ onAdd, profile }) {
         </div>
       </div>
       <button type="submit" className="btn btn--primary">Add item</button>
-      {selected && selected.label === name && (
+      {selected && selected.name === name && (
         <p className="combo__chosen">
           {selected.row.chart === 'storage' ? 'Cold storage' : 'USDA cooking'}: {guidelineSummary(selected.row)}
           {selected.row.note && <> · {selected.row.note}</>}

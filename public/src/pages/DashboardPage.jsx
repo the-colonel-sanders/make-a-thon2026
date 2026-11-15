@@ -24,7 +24,7 @@ export function DashboardPage({ applianceId, backend, inZoneNow, now, foodItems,
         return {
           item,
           exposureMs,
-          status: itemStatus(exposureMs, !item.removed_at && inZoneNow, item.spoiled_at),
+          status: itemStatus(exposureMs, !item.removed_at && inZoneNow, item.spoiled_at, item.simulated_status),
           // True if the item predates the oldest reading we fetched.
           partial: oldestReading != null && Date.parse(item.placed_at) < oldestReading,
         }

@@ -56,6 +56,16 @@ export function labelFor(row, foods = row.foods) {
   return capitalize(row.label.replace('{food}', joinFoods(foods.length ? foods : row.foods)))
 }
 
+/**
+ * The item name for a label: the food without the chart's description, e.g.
+ * "Raw beef — chops, roasts, steak" -> "Raw beef",
+ * "Summer sausage (keep refrigerated) — opened" -> "Summer sausage".
+ */
+export function itemName(label) {
+  const name = label.split(' — ')[0].replace(/\s*\([^)]*\)/g, '').trim()
+  return name || label
+}
+
 /** Build the search index once per data load. */
 export function buildIndex(rows) {
   return rows.map((row) => {
@@ -80,7 +90,8 @@ const matchScore = (tokens, q, weight) => {
 }
 
 /**
- * Search the index. Returns [{ row, label, score }] best first. Results are
+ * Search the index. Returns [{ row, label, name, score }] best first (`label`
+ * is the full chart label for the dropdown, `name` the item name it adds). Results are
  * capped at `limit`; an empty query returns nothing.
  */
 export function searchFoods(index, query, limit = 40) {
@@ -119,7 +130,8 @@ export function searchFoods(index, query, limit = 40) {
     if (!matchedAll) continue
 
     const foods = row.foods.filter((f) => matchedFoods.has(f))
-    results.push({ row, label: labelFor(row, foods), score })
+    const label = labelFor(row, foods)
+    results.push({ row, label, name: itemName(label), score })
   }
 
   // Best match first; ties keep the USDA chart order.
